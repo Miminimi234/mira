@@ -1,11 +1,13 @@
 [build]
 builder = "NIXPACKS"
 # Use npm explicitly - bun.lockb has been removed
-buildCommand = "npm install && npm run build && npm run build:server"
+# Build only the frontend; the server code was removed so skip server build
+buildCommand = "npm install && npm run build"
 
 [deploy]
-# Start the Express server (serves both API and potentially static files)
-startCommand = "npm run server"
+# Start the frontend preview server (serve built static assets)
+# Pass the platform PORT to `vite preview` so the preview server binds correctly.
+startCommand = "npm run preview -- --port $PORT"
 # NOTE: removed healthcheckPath so platform won't perform an HTTP healthcheck
 # restartPolicyType and related healthcheck settings were intentionally omitted
 # to avoid platform-level health probes during deployments.
