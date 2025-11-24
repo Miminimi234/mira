@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+    </style>
+  </defs>
+  <rect width="1200" height="630" fill="#050609"/>
+  
+  <!-- Background circles -->
+  <circle cx="600" cy="315" r="250" fill="#f6c86a" opacity="0.1"/>
+  <circle cx="600" cy="315" r="180" fill="#f6c86a" opacity="0.15"/>
+  <circle cx="600" cy="315" r="120" fill="#f6c86a" opacity="0.2"/>
+  
+  <!-- Main logo circle -->
+  <circle cx="600" cy="200" r="80" fill="#f6c86a"/>
+  <circle cx="600" cy="200" r="40" fill="#050609"/>
+  <path d="M 560 200 L 580 180 L 580 200 L 580 220 Z" fill="#f6c86a"/>
+  
+  <!-- Title -->
+  <text x="600" y="360" font-family="Inter, sans-serif" font-size="72" font-weight="700" fill="#f6c86a" text-anchor="middle" letter-spacing="-0.02em">AURA PREDICT</text>
+  
+  <!-- Subtitle -->
+  <text x="600" y="420" font-family="Inter, sans-serif" font-size="32" font-weight="400" fill="#C6CBD9" text-anchor="middle">AI-Powered Prediction Market Terminal</text>
+  
+  <!-- Tagline -->
+  <text x="600" y="480" font-family="Inter, sans-serif" font-size="20" font-weight="400" fill="#7C8190" text-anchor="middle">Real-time trading intelligence powered by multiple AI agents</text>
+</svg>

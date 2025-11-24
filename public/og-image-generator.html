@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 1200px;
+      height: 630px;
+      background: #050609;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      overflow: hidden;
+    }
+    .logo-circle {
+      width: 160px;
+      height: 160px;
+      border-radius: 50%;
+      background: #f6c86a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 40px;
+      position: relative;
+    }
+    .logo-inner {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: #050609;
+    }
+    .logo-play {
+      position: absolute;
+      width: 0;
+      height: 0;
+      border-left: 30px solid #f6c86a;
+      border-top: 18px solid transparent;
+      border-bottom: 18px solid transparent;
+      left: 50%;
+      margin-left: -5px;
+    }
+    h1 {
+      color: #f6c86a;
+      font-size: 72px;
+      font-weight: 700;
+      margin: 0;
+      letter-spacing: -0.02em;
+      text-align: center;
+    }
+    .subtitle {
+      color: #C6CBD9;
+      font-size: 32px;
+      font-weight: 400;
+      margin: 20px 0 0 0;
+      text-align: center;
+    }
+    .tagline {
+      color: #7C8190;
+      font-size: 20px;
+      font-weight: 400;
+      margin: 15px 0 0 0;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="logo-circle">
+    <div class="logo-inner"></div>
+    <div class="logo-play"></div>
+  </div>
+  <h1>MIRA</h1>
+  <p class="subtitle">AI-Powered Prediction Market Terminal</p>
+  <p class="tagline">Real-time trading intelligence powered by multiple AI agents</p>
+</body>
+</html>

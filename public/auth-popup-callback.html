@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Authentication</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      background: #0a0a0a;
+      color: #fff;
+    }
+    .container {
+      text-align: center;
+      padding: 2rem;
+    }
+    .spinner {
+      border: 3px solid rgba(255, 255, 255, 0.1);
+      border-top: 3px solid #fff;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 1rem;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .message {
+      font-size: 14px;
+      color: #888;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="spinner"></div>
+    <div class="message">Completing authentication...</div>
+  </div>
+  <script>
+    (function() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const success = urlParams.get('success');
+      const error = urlParams.get('error');
+      const requires2FA = urlParams.get('2fa') === 'required';
+      
+      // Get the origin from the current window location
+      const origin = window.location.origin;
+      
+      if (requires2FA) {
+        // 2FA required - show verification form
+        document.querySelector('.message').textContent = '2FA Verification Required';
+        document.body.innerHTML = `
+          <div class="container">
+            <h2 style="margin-bottom: 1rem;">Two-Factor Authentication</h2>
+            <p style="margin-bottom: 1.5rem; color: #888;">Enter the 6-digit code from your authenticator app</p>
+            <input 
+              type="text" 
+              id="twoFactorCode" 
+              placeholder="000000" 
+              maxlength="6" 
+              style="
+                width: 200px;
+                padding: 12px;
+                font-size: 24px;
+                text-align: center;
+                letter-spacing: 8px;
+                font-family: monospace;
+                border: 2px solid #333;
+                background: #1a1a1a;
+                color: #fff;
+                border-radius: 8px;
+                margin-bottom: 1rem;
+              "
+              autocomplete="off"
+            />
+            <div id="error" style="color: #ff4444; margin-bottom: 1rem; min-height: 20px;"></div>
+            <button 
+              id="verifyBtn"
+              style="
+                padding: 10px 24px;
+                background: #4285F4;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 14px;
+              "
+            >Verify</button>
+          </div>
+        `;
+        
+        const codeInput = document.getElementById('twoFactorCode');
+        const verifyBtn = document.getElementById('verifyBtn');
+        const errorDiv = document.getElementById('error');
+        
+        codeInput.focus();
+        
+        codeInput.addEventListener('input', (e) => {
+          e.target.value = e.target.value.replace(/\D/g, '').slice(0, 6);
+          errorDiv.textContent = '';
+        });
+        
+        codeInput.addEventListener('keypress', (e) => {
+          if (e.key === 'Enter' && codeInput.value.length === 6) {
+            verifyBtn.click();
+          }
+        });
+        
+        verifyBtn.addEventListener('click', async () => {
+          const code = codeInput.value;
+          if (code.length !== 6) {
+            errorDiv.textContent = 'Please enter a 6-digit code';
+            return;
+          }
+          
+          verifyBtn.disabled = true;
+          verifyBtn.textContent = 'Verifying...';
+          
+          try {
+            const response = await fetch('/api/auth/2fa/verify', {
+              method: 'POST',
+              credentials: 'include',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ code }),
+            });
+            
+            if (response.ok) {
+              // 2FA verified - notify parent window
+              if (window.opener) {
+                window.opener.postMessage({
+                  type: 'GOOGLE_AUTH_SUCCESS'
+                }, origin);
+                
+                setTimeout(() => {
+                  window.close();
+                }, 500);
+              } else {
+                window.location.href = '/';
+              }
+            } else {
+              const errorData = await response.json();
+              errorDiv.textContent = errorData.error || 'Invalid code. Please try again.';
+              codeInput.value = '';
+              codeInput.focus();
+              verifyBtn.disabled = false;
+              verifyBtn.textContent = 'Verify';
+            }
+          } catch (err) {
+            errorDiv.textContent = 'Verification failed. Please try again.';
+            verifyBtn.disabled = false;
+            verifyBtn.textContent = 'Verify';
+          }
+        });
+      } else if (success === '1') {
+        // Authentication successful - notify parent window
+        if (window.opener) {
+          window.opener.postMessage({
+            type: 'GOOGLE_AUTH_SUCCESS'
+          }, origin);
+          
+          // Close popup after a short delay
+          setTimeout(() => {
+            window.close();
+          }, 500);
+        } else {
+          // If no opener, redirect to main page
+          window.location.href = '/';
+        }
+      } else if (error === '1') {
+        // Authentication failed - notify parent window
+        if (window.opener) {
+          window.opener.postMessage({
+            type: 'GOOGLE_AUTH_ERROR'
+          }, origin);
+          
+          // Close popup after a short delay
+          setTimeout(() => {
+            window.close();
+          }, 500);
+        } else {
+          // If no opener, redirect to main page with error
+          window.location.href = '/?auth=error';
+        }
+      } else {
+        // Unknown state - just close
+        setTimeout(() => {
+          window.close();
+        }, 1000);
+      }
+    })();
+  </script>
+</body>
+</html>
+
