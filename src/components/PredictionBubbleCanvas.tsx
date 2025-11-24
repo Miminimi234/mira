@@ -20,6 +20,8 @@ export default function PredictionBubbleCanvas({ items = [], onBubbleClick }: Pr
     // Maintain a stable nodes map so seeded positions persist across renders
     const nodesRef = useRef<Record<string, any>>({});
     const simRef = useRef<d3.Simulation<any, undefined> | null>(null);
+    // Simple debounce timer for zoom recalculation
+    const zoomTimerRef = useRef<number | null>(null);
 
     const [fetchedItems, setFetchedItems] = useState<any[] | null>(null);
     const [marketsMapState, setMarketsMapState] = useState<Record<string, any>>({});
@@ -521,58 +523,8 @@ export default function PredictionBubbleCanvas({ items = [], onBubbleClick }: Pr
                 .on('tick', () => {
                     // update node positions inside the content group
                     content.selectAll('g.pred-node').attr('transform', (d: any) => `translate(${d.x},${d.y})`);
-
-                    // compute bounding box of visible nodes (including radii)
-                    try {
-                        const all = simRef.current?.nodes() || [];
-                        if (all && all.length) {
-                            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-                            for (const n of all) {
-                                const x = Number(n.x || 0);
-                                const y = Number(n.y || 0);
-                                const r = Number(n.r || 24);
-                                minX = Math.min(minX, x - r);
-                                maxX = Math.max(maxX, x + r);
-                                minY = Math.min(minY, y - r);
-                                maxY = Math.max(maxY, y + r);
-                            }
-                            const bboxW = Math.max(1, (maxX - minX));
-                            const bboxH = Math.max(1, (maxY - minY));
-
-                            // Adjust padding and zoom factors to reduce excessive zoom-out
-                            const padding = Math.max(60, Math.min(240, Math.round(Math.min(width, height) * 0.06))); // px padding around bbox
-                            const scaleX = (width - padding) / bboxW;
-                            const scaleY = (height - padding) / bboxH;
-                            // Compute raw scale to fit bbox, then apply a moderate zoom-out factor based on node count.
-                            const rawScale = Math.min(scaleX, scaleY);
-                            // Less aggressive zoom-out: base divisor increases with node count but milder than before
-                            const count = (all && all.length) ? all.length : 1;
-                            const zoomOutFactor = Math.max(1, Math.sqrt(count / 40));
-                            const adjustedScale = rawScale / zoomOutFactor;
-                            // Clamp scale to avoid extreme zooming; set a higher minimum scale to zoom out less
-                            const scale = Math.min(1, Math.max(0.28, adjustedScale));
-
-                            // center of bbox
-                            const bboxCX = (minX + maxX) / 2;
-                            const bboxCY = (minY + maxY) / 2;
-
-                            // compute translation so bbox center maps to svg center after scaling
-                            const tx = centerX - bboxCX * scale;
-                            const ty = centerY - bboxCY * scale;
-
-                            // Smoothly animate transform to reduce jank when many nodes added
-                            try {
-                                (content as any).transition().duration(120).attr('transform', `translate(${tx},${ty}) scale(${scale})` as any);
-                            } catch (e) {
-                                content.attr('transform', `translate(${tx},${ty}) scale(${scale})`);
-                            }
-                        } else {
-                            // default reset
-                            content.attr('transform', null as any);
-                        }
-                    } catch (e) {
-                        // ignore scaling errors
-                    }
+                    // We intentionally avoid per-tick zoom calculations here. Zoom is computed
+                    // on node-set changes and on resize using a debounced function below.
                 });
 
             sim.nodes(nodes);
@@ -587,9 +539,71 @@ export default function PredictionBubbleCanvas({ items = [], onBubbleClick }: Pr
             simRef.current.alpha(0.3).restart();
         }
 
+        // Debounced zoom: compute and apply zoom after node updates or resize.
+        const ZOOM_DEBOUNCE_MS = 150;
+        const MIN_SCALE = 0.5;
+        const computeAndApplyZoomNow = (nodeArray: any[]) => {
+            try {
+                if (!content || !nodeArray || !nodeArray.length) {
+                    content.attr('transform', null as any);
+                    return;
+                }
+                const widthNow = container.clientWidth || window.innerWidth;
+                const heightNow = container.clientHeight || window.innerHeight;
+                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                for (const n of nodeArray) {
+                    const x = Number(n.x || 0);
+                    const y = Number(n.y || 0);
+                    const r = Number(n.r || 24);
+                    minX = Math.min(minX, x - r);
+                    maxX = Math.max(maxX, x + r);
+                    minY = Math.min(minY, y - r);
+                    maxY = Math.max(maxY, y + r);
+                }
+                const bboxW = Math.max(1, (maxX - minX));
+                const bboxH = Math.max(1, (maxY - minY));
+                const paddingNow = Math.max(40, Math.min(240, Math.round(Math.min(widthNow, heightNow) * 0.06)));
+                const scaleXNow = (widthNow - paddingNow) / bboxW;
+                const scaleYNow = (heightNow - paddingNow) / bboxH;
+                const rawScaleNow = Math.min(scaleXNow, scaleYNow);
+                const scaleNow = Math.min(1, Math.max(MIN_SCALE, rawScaleNow));
+                const bboxCX = (minX + maxX) / 2;
+                const bboxCY = (minY + maxY) / 2;
+                const txNow = (widthNow / 2) - bboxCX * scaleNow;
+                const tyNow = (heightNow / 2) - bboxCY * scaleNow;
+                // Apply transform immediately (no per-tick throttles). Use a short transition
+                // to smooth when node set changes rather than per-tick updates.
+                try {
+                    (content as any).transition().duration(120).attr('transform', `translate(${txNow},${tyNow}) scale(${scaleNow})` as any);
+                } catch (e) {
+                    content.attr('transform', `translate(${txNow},${tyNow}) scale(${scaleNow})` as any);
+                }
+            } catch (e) {
+                // ignore
+            }
+        };
+
+        const scheduleComputeAndApplyZoom = (nodeArray: any[]) => {
+            try {
+                if (zoomTimerRef.current) {
+                    window.clearTimeout(zoomTimerRef.current);
+                    zoomTimerRef.current = null;
+                }
+                zoomTimerRef.current = window.setTimeout(() => {
+                    computeAndApplyZoomNow(nodeArray);
+                    zoomTimerRef.current = null;
+                }, ZOOM_DEBOUNCE_MS);
+            } catch (e) { /* ignore */ }
+        };
+
+        // schedule initial zoom
+        try { scheduleComputeAndApplyZoom(nodes); } catch (e) { }
+
         const handleResize = () => {
             const w = window.innerWidth, h = window.innerHeight;
             svg.attr("width", w).attr("height", h).attr("viewBox", `0 0 ${w} ${h}`);
+            // Recompute zoom on resize so layout adapts (debounced)
+            try { scheduleComputeAndApplyZoom(simRef.current?.nodes() || nodes); } catch (e) { }
         };
 
         window.addEventListener("resize", handleResize);
@@ -597,6 +611,10 @@ export default function PredictionBubbleCanvas({ items = [], onBubbleClick }: Pr
         return () => {
             window.removeEventListener("resize", handleResize);
             svg.selectAll("g.pred-node").on('.drag', null as any);
+            if (zoomTimerRef.current) {
+                window.clearTimeout(zoomTimerRef.current);
+                zoomTimerRef.current = null;
+            }
         };
     }, [fetchedItems, onBubbleClick]);
 
@@ -624,7 +642,7 @@ function getTitleLabel(d: any) {
     return s.slice(0, max) + '…';
 }
 
-function getDecisionLabel(d: any) {
+export function getDecisionLabel(d: any) {
     const dec = (d.decision || d.position || (typeof d.probability === 'number' ? (d.probability >= 50 ? 'YES' : 'NO') : null));
     if (dec) {
         const s = String(dec).toUpperCase();
