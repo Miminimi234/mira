@@ -318,7 +318,10 @@ export default function PredictionBubbleCanvas({ items = [], onBubbleClick }: Pr
         // Data-join: render nodes entirely with D3 (enter / update / exit)
         const key = (d: any) => d.id || d.question || d.marketSlug || JSON.stringify(d);
 
-        const sel = svg.selectAll<SVGGElement, any>('g.pred-node').data(nodes, key as any);
+        // Ensure a content group to allow global scaling/centering
+        const content = svg.select('g.mira-content').empty() ? svg.append('g').attr('class', 'mira-content') : svg.select('g.mira-content');
+
+        const sel = content.selectAll<SVGGElement, any>('g.pred-node').data(nodes, key as any);
 
         // EXIT
         sel.exit().transition().duration(200).style('opacity', 0).remove();
@@ -516,7 +519,60 @@ export default function PredictionBubbleCanvas({ items = [], onBubbleClick }: Pr
                 .force('collide', d3.forceCollide().radius((d: any) => (d.r || 24) + 2).iterations(2))
                 .alphaTarget(0.01)
                 .on('tick', () => {
-                    svg.selectAll('g.pred-node').attr('transform', (d: any) => `translate(${d.x},${d.y})`);
+                    // update node positions inside the content group
+                    content.selectAll('g.pred-node').attr('transform', (d: any) => `translate(${d.x},${d.y})`);
+
+                    // compute bounding box of visible nodes (including radii)
+                    try {
+                        const all = simRef.current?.nodes() || [];
+                        if (all && all.length) {
+                            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                            for (const n of all) {
+                                const x = Number(n.x || 0);
+                                const y = Number(n.y || 0);
+                                const r = Number(n.r || 24);
+                                minX = Math.min(minX, x - r);
+                                maxX = Math.max(maxX, x + r);
+                                minY = Math.min(minY, y - r);
+                                maxY = Math.max(maxY, y + r);
+                            }
+                            const bboxW = Math.max(1, (maxX - minX));
+                            const bboxH = Math.max(1, (maxY - minY));
+
+                            // Adjust padding and zoom factors to reduce excessive zoom-out
+                            const padding = Math.max(60, Math.min(240, Math.round(Math.min(width, height) * 0.06))); // px padding around bbox
+                            const scaleX = (width - padding) / bboxW;
+                            const scaleY = (height - padding) / bboxH;
+                            // Compute raw scale to fit bbox, then apply a moderate zoom-out factor based on node count.
+                            const rawScale = Math.min(scaleX, scaleY);
+                            // Less aggressive zoom-out: base divisor increases with node count but milder than before
+                            const count = (all && all.length) ? all.length : 1;
+                            const zoomOutFactor = Math.max(1, Math.sqrt(count / 40));
+                            const adjustedScale = rawScale / zoomOutFactor;
+                            // Clamp scale to avoid extreme zooming; set a higher minimum scale to zoom out less
+                            const scale = Math.min(1, Math.max(0.28, adjustedScale));
+
+                            // center of bbox
+                            const bboxCX = (minX + maxX) / 2;
+                            const bboxCY = (minY + maxY) / 2;
+
+                            // compute translation so bbox center maps to svg center after scaling
+                            const tx = centerX - bboxCX * scale;
+                            const ty = centerY - bboxCY * scale;
+
+                            // Smoothly animate transform to reduce jank when many nodes added
+                            try {
+                                (content as any).transition().duration(120).attr('transform', `translate(${tx},${ty}) scale(${scale})` as any);
+                            } catch (e) {
+                                content.attr('transform', `translate(${tx},${ty}) scale(${scale})`);
+                            }
+                        } else {
+                            // default reset
+                            content.attr('transform', null as any);
+                        }
+                    } catch (e) {
+                        // ignore scaling errors
+                    }
                 });
 
             sim.nodes(nodes);
