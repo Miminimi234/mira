@@ -67,26 +67,28 @@ export async function runAgentCycle(
   const persistence = await getNoopPersistenceAdapter();
 
   try {
-    // Load portfolio from persistence
-    let portfolioRecord = await persistence.getPortfolio(agentId);
-    let portfolio: AgentPortfolio;
-
-    if (portfolioRecord) {
-      // Rebuild portfolio from record (simplified - in production would load open positions)
-      portfolio = {
-        agentId,
-        startingCapitalUsd: portfolioRecord.startingCapitalUsd,
-        currentCapitalUsd: portfolioRecord.currentCapitalUsd,
-        realizedPnlUsd: portfolioRecord.realizedPnlUsd,
-        unrealizedPnlUsd: portfolioRecord.unrealizedPnlUsd,
-        maxEquityUsd: portfolioRecord.maxEquityUsd,
-        maxDrawdownPct: portfolioRecord.maxDrawdownPct,
-        openPositions: {}, // TODO: Load from persistence
-        lastUpdated: portfolioRecord.lastUpdated,
-      };
-    } else {
-      // Create initial portfolio
-      portfolio = createInitialPortfolio(agentId);
+    // Load portfolio from persistence if available, otherwise create an initial portfolio.
+    // Persistence is optional in the new flow; treat any returned record as untyped and
+    // fall back to defaults to keep the execution path simple.
+    let portfolio: AgentPortfolio = createInitialPortfolio(agentId);
+    try {
+      const portfolioRecordAny: any = await persistence.getPortfolio(agentId);
+      if (portfolioRecordAny && (portfolioRecordAny.portfolio || Object.keys(portfolioRecordAny).length > 0)) {
+        const pr = portfolioRecordAny.portfolio || portfolioRecordAny;
+        portfolio = {
+          agentId,
+          startingCapitalUsd: pr.startingCapitalUsd ?? pr.startingCapital ?? 0,
+          currentCapitalUsd: pr.currentCapitalUsd ?? pr.currentCapital ?? pr.current ?? 0,
+          realizedPnlUsd: pr.realizedPnlUsd ?? 0,
+          unrealizedPnlUsd: pr.unrealizedPnlUsd ?? 0,
+          maxEquityUsd: pr.maxEquityUsd ?? 0,
+          maxDrawdownPct: pr.maxDrawdownPct ?? 0,
+          openPositions: pr.openPositions ?? {},
+          lastUpdated: pr.lastUpdated ?? new Date().toISOString(),
+        };
+      }
+    } catch (err) {
+      // Ignore persistence mapping errors and use initial portfolio
     }
 
     // Update portfolio metrics with current market data
