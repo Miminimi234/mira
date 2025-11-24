@@ -36,7 +36,7 @@ Real-time AI-powered prediction market interface with live trading analytics and
 
 ## AI Agent Decision-Making Flowchart
 
-The following flowchart illustrates how AI agents analyze markets and make trading decisions:
+The following flowchart illustrates how AI agents analyze markets and make trading decisions:.
 
 ```mermaid
 flowchart TD
