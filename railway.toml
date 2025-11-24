@@ -6,11 +6,9 @@ buildCommand = "npm install && npm run build && npm run build:server"
 [deploy]
 # Start the Express server (serves both API and potentially static files)
 startCommand = "npm run server"
-# Healthcheck configuration
-healthcheckPath = "/api/health"
-healthcheckTimeout = 100
-restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 10
+# NOTE: removed healthcheckPath so platform won't perform an HTTP healthcheck
+# restartPolicyType and related healthcheck settings were intentionally omitted
+# to avoid platform-level health probes during deployments.
 
 # Environment
 [env]
