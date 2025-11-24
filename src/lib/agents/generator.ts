@@ -12,11 +12,19 @@ import { getAgentProfile } from './domain.js';
 // This ensures we use the SAME API keys and data source
 import { fetchAllMarkets } from '../markets/polymarket.js';
 import { fetchLatestNews } from '../news/aggregator.js';
-import { getCachedAgentTrades, getCachedTradesQuick, setCachedAgentTrades } from './cache.js';
+// Legacy cache/persistence removed. Use no-op persistence in this build.
 import { generateTradeForMarket } from './engine.js';
-import { getPersistenceAdapter } from './persistence.js';
 import { generateResearchForMarket, type ResearchDecision } from './research.js';
 import { computeNewsRelevance, filterCandidateMarkets, scoreMarketForAgent } from './scoring.js';
+// No-op persistence adapter (replaces old persistence.js)
+async function getNoopPersistenceAdapter() {
+  return {
+    marketHasTrade: async (_marketId: string) => false,
+    saveTrade: async (_trade: any) => { /* noop */ },
+    savePortfolio: async (_p: any) => { /* noop */ },
+    getPortfolio: async (_agentId: string) => null,
+  };
+}
 
 /**
  * Research decisions cache (separate from trades)
@@ -54,12 +62,7 @@ export async function generateAgentTrades(agentId: AgentId): Promise<AgentTrade[
     return existingGeneration;
   }
 
-  // Check cache FIRST before starting generation (fast path)
-  const quickCached = await getCachedTradesQuick(agentId);
-  if (quickCached && quickCached.length > 0) {
-    console.log(`[Agent:${agentId}] ⚡ Quick cache hit - returning ${quickCached.length} cached trades immediately`);
-    return quickCached;
-  }
+  // Legacy cache removed — always generate fresh trades
 
   // Create generation promise and store it for deduplication
   const generationPromise = (async () => {
@@ -97,16 +100,8 @@ export async function generateAgentTrades(agentId: AgentId): Promise<AgentTrade[
       }
 
       // Try full cache with market ID validation
-      const cached = await getCachedAgentTrades(agentId, currentMarketIds);
-      if (cached !== null && cached.length > 0) {
-        console.log(`[Agent:${agentId}] 💾 Cache hit - returning ${cached.length} cached trades`);
-        // Log sample trade market IDs
-        if (cached.length > 0) {
-          console.log(`[Agent:${agentId}] 📋 Sample trade market IDs:`, cached.slice(0, 3).map(t => t.marketId));
-        }
-        return cached;
-      }
-      console.log(`[Agent:${agentId}] 💾 Cache miss - generating NEW trades with AI (this may take time)`);
+      // No persisted cache available in this deployment — generating NEW trades
+      console.log(`[Agent:${agentId}] 💾 No cache integration — generating NEW trades with AI (this may take time)`);
 
       // Filter candidate markets (use allMarkets which includes closed markets)
       console.log(`[Agent:${agentId}] 🔍 Filtering candidate markets (minVolume: $${agent.minVolume}, minLiquidity: $${agent.minLiquidity})...`);
@@ -176,7 +171,7 @@ export async function generateAgentTrades(agentId: AgentId): Promise<AgentTrade[
       const researchDecisions: ResearchDecision[] = [];
       const maxResearchDecisions = Math.max(agent.maxTrades * 2, 6);
       const researchedMarketIds = new Set<string>();
-      const persistence = await getPersistenceAdapter();
+      const persistence = await getNoopPersistenceAdapter();
 
       console.log(`[Agent:${agentId}] 🤖 Generating trades for ${selectedMarkets.length} markets...`);
       for (let i = 0; i < selectedMarkets.length; i++) {
@@ -237,7 +232,7 @@ export async function generateAgentTrades(agentId: AgentId): Promise<AgentTrade[
       const duration = Date.now() - startTime;
       console.log(`[Agent:${agentId}] ✅ Trade generation complete: ${trades.length} trades in ${duration}ms`);
 
-      await setCachedAgentTrades(agentId, trades, currentMarketIds);
+      // Legacy cache persistence omitted in this deployment
       researchCache.set(agentId, researchDecisions);
 
       return trades;

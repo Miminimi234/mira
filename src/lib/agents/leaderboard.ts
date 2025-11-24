@@ -6,7 +6,25 @@
  */
 
 import type { AgentId, Category } from './domain.js';
-import type { AgentTradeRecord, AgentPortfolioRecord } from './persistence.js';
+
+// Local copies of persistence record types (persistence adapter removed)
+export interface AgentTradeRecord {
+  id: string;
+  agentId: AgentId;
+  marketId: string;
+  category?: Category | 'Other';
+  side: 'YES' | 'NO';
+  status: 'OPEN' | 'CLOSED' | 'PENDING';
+  openedAt: string;
+  closedAt?: string;
+  pnlUsd: number | null;
+}
+
+export interface AgentPortfolioRecord {
+  agentId: AgentId;
+  portfolio: any;
+  updatedAt: string;
+}
 
 /**
  * Leaderboard metrics for an agent
@@ -50,23 +68,23 @@ export function calculateAgentMetrics(
   // Filter trades by time window
   const now = Date.now();
   const filteredTrades = filterTradesByWindow(trades, window, now);
-  
+
   // Closed trades only for win rate
   const closedTrades = filteredTrades.filter(t => t.status === 'CLOSED' && t.pnlUsd !== null);
-  
+
   // Calculate wins/losses
   const wins = closedTrades.filter(t => (t.pnlUsd || 0) > 0).length;
   const losses = closedTrades.filter(t => (t.pnlUsd || 0) <= 0).length;
   const winRate = wins + losses > 0 ? wins / (wins + losses) : 0;
-  
+
   // Calculate total PnL
   const totalPnlUsd = closedTrades.reduce((sum, t) => sum + (t.pnlUsd || 0), 0);
-  
+
   // Calculate PnL percentage
   const pnlPct = portfolio.portfolio.startingCapitalUsd > 0
     ? (portfolio.portfolio.currentCapitalUsd - portfolio.portfolio.startingCapitalUsd) / portfolio.portfolio.startingCapitalUsd
     : 0;
-  
+
   // Calculate average holding time
   const holdingTimes = closedTrades
     .filter(t => t.openedAt && t.closedAt)
@@ -78,26 +96,26 @@ export function calculateAgentMetrics(
   const avgHoldingTimeMinutes = holdingTimes.length > 0
     ? holdingTimes.reduce((sum, t) => sum + t, 0) / holdingTimes.length
     : 0;
-  
+
   // Calculate trades in last 24h
   const tradesCount24h = filteredTrades.filter(t => {
     const opened = new Date(t.openedAt).getTime();
     return (now - opened) < 24 * 60 * 60 * 1000;
   }).length;
-  
+
   // Calculate PnL by category
   const categoryPnL: Record<string, number> = {};
   for (const trade of closedTrades) {
     const category = trade.category || 'Other';
     categoryPnL[category] = (categoryPnL[category] || 0) + (trade.pnlUsd || 0);
   }
-  
+
   // Find best/worst category
   let bestCategory: Category | null = null;
   let worstCategory: Category | null = null;
   let bestPnl = -Infinity;
   let worstPnl = Infinity;
-  
+
   for (const [category, pnl] of Object.entries(categoryPnL)) {
     if (pnl > bestPnl) {
       bestPnl = pnl;
@@ -108,7 +126,7 @@ export function calculateAgentMetrics(
       worstCategory = category as Category;
     }
   }
-  
+
   return {
     agentId,
     currentCapitalUsd: portfolio.portfolio.currentCapitalUsd,
@@ -137,7 +155,7 @@ function filterTradesByWindow(
   if (window === 'all-time') {
     return trades;
   }
-  
+
   let cutoffMs: number;
   switch (window) {
     case '30d':
@@ -152,9 +170,9 @@ function filterTradesByWindow(
     default:
       return trades;
   }
-  
+
   const cutoff = now - cutoffMs;
-  
+
   return trades.filter(trade => {
     const opened = new Date(trade.openedAt).getTime();
     return opened >= cutoff;
@@ -182,41 +200,41 @@ export function findConsensusMarkets(
 ): ConsensusMetrics[] {
   // Group trades by market
   const marketMap = new Map<string, { yes: AgentId[]; no: AgentId[]; question?: string }>();
-  
+
   for (const [agentId, trades] of Object.entries(allTrades)) {
     for (const trade of trades) {
       if (trade.status !== 'OPEN') continue;
-      
+
       const market = marketMap.get(trade.marketId) || { yes: [], no: [] };
-      
+
       if (trade.side === 'YES') {
         market.yes.push(agentId as AgentId);
       } else {
         market.no.push(agentId as AgentId);
       }
-      
+
       if (trade.marketId && !market.question) {
         // Store question if available (would need market data)
         market.question = trade.marketId;
       }
-      
+
       marketMap.set(trade.marketId, market);
     }
   }
-  
+
   // Build consensus metrics
   const consensus: ConsensusMetrics[] = [];
-  
+
   for (const [marketId, data] of marketMap.entries()) {
     const totalAgents = data.yes.length + data.no.length;
     if (totalAgents < 2) continue; // Need at least 2 agents
-    
-    const consensusSide = data.yes.length > data.no.length ? 'YES' : 
-                         data.no.length > data.yes.length ? 'NO' : 'NONE';
-    const consensusStrength = totalAgents > 0 
-      ? Math.max(data.yes.length, data.no.length) / totalAgents 
+
+    const consensusSide = data.yes.length > data.no.length ? 'YES' :
+      data.no.length > data.yes.length ? 'NO' : 'NONE';
+    const consensusStrength = totalAgents > 0
+      ? Math.max(data.yes.length, data.no.length) / totalAgents
       : 0;
-    
+
     consensus.push({
       marketId,
       marketQuestion: data.question || marketId,
@@ -227,7 +245,7 @@ export function findConsensusMarkets(
       consensusStrength,
     });
   }
-  
+
   return consensus.sort((a, b) => b.consensusStrength - a.consensusStrength);
 }
 
@@ -238,25 +256,25 @@ export function findConflicts(
   allTrades: Record<AgentId, AgentTradeRecord[]>
 ): Array<{ marketId: string; yesAgents: AgentId[]; noAgents: AgentId[] }> {
   const marketMap = new Map<string, { yes: AgentId[]; no: AgentId[] }>();
-  
+
   for (const [agentId, trades] of Object.entries(allTrades)) {
     for (const trade of trades) {
       if (trade.status !== 'OPEN') continue;
-      
+
       const market = marketMap.get(trade.marketId) || { yes: [], no: [] };
-      
+
       if (trade.side === 'YES') {
         market.yes.push(agentId as AgentId);
       } else {
         market.no.push(agentId as AgentId);
       }
-      
+
       marketMap.set(trade.marketId, market);
     }
   }
-  
+
   const conflicts: Array<{ marketId: string; yesAgents: AgentId[]; noAgents: AgentId[] }> = [];
-  
+
   for (const [marketId, data] of marketMap.entries()) {
     if (data.yes.length > 0 && data.no.length > 0) {
       conflicts.push({
@@ -266,7 +284,7 @@ export function findConflicts(
       });
     }
   }
-  
+
   return conflicts;
 }
 

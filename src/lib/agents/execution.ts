@@ -14,8 +14,17 @@ const ALL_AGENT_IDS = Object.keys(AGENT_PROFILES) as AgentId[];
 import { fetchAllMarkets } from '../markets/polymarket.js';
 import { fetchLatestNews } from '../news/aggregator.js';
 import { generateAgentTrades } from './generator.js';
-import { getPersistenceAdapter } from './persistence.js';
 import { createInitialPortfolio, updatePortfolioMetrics } from './portfolio.js';
+
+// No-op persistence adapter (replaces old persistence.js usage)
+async function getNoopPersistenceAdapter() {
+  return {
+    getPortfolio: async (_agentId: string) => null,
+    savePortfolio: async (_portfolio: AgentPortfolio) => { /* noop */ },
+    marketHasTrade: async (_marketId: string) => false,
+    saveTrade: async (_trade: any) => { /* noop */ },
+  };
+}
 
 /**
  * Trading cycle configuration
@@ -55,7 +64,7 @@ export async function runAgentCycle(
 ): Promise<CycleResult> {
   const startTime = Date.now();
   const agent = getAgentProfile(agentId);
-  const persistence = await getPersistenceAdapter();
+  const persistence = await getNoopPersistenceAdapter();
 
   try {
     // Load portfolio from persistence
