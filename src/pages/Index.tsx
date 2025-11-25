@@ -780,12 +780,92 @@ const Index = () => {
   useEffect(() => {
     const handler = async (e: any) => {
       try {
-        const marketId = e?.detail?.marketId;
-        const marketName = e?.detail?.marketName;
-        if (!marketId && !marketName) return;
+        const detail = e?.detail || {};
+        const providedPrediction = detail?.prediction;
+        const marketId = detail?.marketId || detail?.predictionId || (providedPrediction && (providedPrediction.id || providedPrediction.marketId));
+        const marketName = detail?.marketName || (providedPrediction && (providedPrediction.question || providedPrediction.market));
 
-        // Try to find in main predictions list first
-        let matchingPrediction = predictions.find(p => p.id === marketId || (p as any).predictionId === marketId || p.marketSlug === marketId || String(p.id) === String(marketId));
+        if (!marketId && !marketName && !providedPrediction) return;
+
+        // If a full prediction object was provided, normalize it into a PredictionNodeData
+        let matchingPrediction: any = undefined;
+        if (providedPrediction) {
+          const sd: any = providedPrediction;
+          // Normalize various possible bet/volume fields so MarketDetailsPanel can read them
+          const betAmount = sd.investmentUsd ?? sd.volume ?? sd.bet_amount ?? sd.betAmount ?? sd.bet ?? sd.investment ?? undefined;
+          const confidenceVal = sd.confidence ?? sd.probability ?? sd.price ?? undefined;
+          const explicitMarketVolume = sd.volume ?? sd.marketVolume ?? sd.market_volume ?? sd.volume24h ?? undefined;
+          const constructed: PredictionNodeData = {
+            id: sd.marketId || sd.id || String(marketId),
+            question: sd.market || sd.marketQuestion || sd.marketName || sd.title || sd.question || 'Unknown Market',
+            probability: (typeof confidenceVal === 'number' && isFinite(confidenceVal)) ? confidenceVal : (confidenceVal ? Number(confidenceVal) : 0),
+            position: (sd.decision === 'YES' || sd.position === 'YES') ? 'YES' : ((sd.decision === 'NO' || sd.position === 'NO') ? 'NO' : (sd.position || 'YES')),
+            price: (typeof confidenceVal === 'number' && isFinite(confidenceVal)) ? confidenceVal : (confidenceVal ? Number(confidenceVal) : 0),
+            change: sd.change ?? 0,
+            agentName: sd.agentName || sd.agent || '',
+            agentEmoji: sd.agentEmoji || sd.agent_emoji || '',
+            reasoning: sd.reasoning || (Array.isArray(sd.fullReasoning) ? sd.fullReasoning.join(' ') : '') || '',
+            category: sd.category || undefined,
+            marketSlug: sd.marketSlug || sd.slug || undefined,
+            conditionId: sd.conditionId || undefined,
+            imageUrl: sd.imageUrl || sd.image || undefined,
+            createdAt: sd.createdAt || sd.created_at || undefined,
+            endDate: sd.endDate || sd.ends_at || undefined,
+            startDate: sd.startDate || sd.starts_at || undefined,
+            // Do NOT set the market-level `volume` to the agent's bet amount. Only use explicit market volume fields
+            // so MarketDetailsPanel can prefer canonical market data (or the predictions feed) instead of showing the bet as volume.
+            volume: explicitMarketVolume as any,
+            liquidity: sd.liquidity ?? 0,
+            predicted: true,
+          } as PredictionNodeData;
+          // Attach raw agent-style bet fields separately so MarketDetailsPanel can show the bet placed.
+          (constructed as any).bet_amount = sd.bet_amount ?? sd.betAmount ?? sd.bet ?? sd.investment ?? undefined;
+          (constructed as any).investmentUsd = sd.investmentUsd ?? sd.betAmount ?? sd.bet ?? sd.investment ?? undefined;
+          (constructed as any).decision = sd.decision ?? sd.position ?? undefined;
+          // If possible, resolve the canonical market entry and copy its canonical field names
+          try {
+            const marketsMap: Record<string, any> = await new Promise((resolve) => {
+              try {
+                const unsub = listenToMarkets((m: any) => {
+                  try { if (unsub) unsub(); } catch (e) { }
+                  resolve(m || {});
+                });
+                setTimeout(() => resolve({}), 500);
+              } catch (e) { resolve({}); }
+            });
+
+            const entries = Object.entries(marketsMap || {});
+            const found = entries.find(([k, v]: any) => {
+              const maybe = v as any;
+              if (!maybe) return false;
+              const idMatches = String(k) === String(constructed.id) || String(maybe.id) === String(constructed.id);
+              const slugMatches = maybe.slug && String(maybe.slug) === String(constructed.id);
+              const condMatches = maybe.conditionId && String(maybe.conditionId) === String(constructed.id);
+              return idMatches || slugMatches || condMatches;
+            });
+
+            if (found) {
+              const val = found[1] as any;
+              // Copy canonical labels so MarketDetailsPanel finds them directly on the prediction object
+              (constructed as any).volume = (constructed as any).volume ?? val.volume ?? val.total_volume ?? val.volume_all_time ?? undefined;
+              (constructed as any).volume24h = val.volume24h ?? val.volume_24hr ?? val.volume_24h ?? (constructed as any).volume24h ?? undefined;
+              (constructed as any).liquidity = (constructed as any).liquidity ?? val.liquidity ?? val.liquidity_amount ?? undefined;
+              (constructed as any).yes_price = (constructed as any).yes_price ?? val.yes_price ?? val.yesPrice ?? undefined;
+              (constructed as any).no_price = (constructed as any).no_price ?? val.no_price ?? val.noPrice ?? undefined;
+              (constructed as any).createdAt = (constructed as any).createdAt ?? val.created_at ?? val.createdAt ?? val.updated_at ?? undefined;
+              (constructed as any).endDate = (constructed as any).endDate ?? val.end_date ?? val.ends_at ?? undefined;
+              (constructed as any).outcomes = (constructed as any).outcomes ?? val.outcomes ?? undefined;
+              (constructed as any).marketSlug = (constructed as any).marketSlug ?? val.slug ?? val.marketSlug ?? undefined;
+            }
+          } catch (e) {
+            // ignore resolution errors - fallback logic later will still query markets
+          }
+
+          matchingPrediction = constructed as any;
+        }
+
+        // Otherwise try to find in main predictions list first
+        if (!matchingPrediction) matchingPrediction = predictions.find(p => p.id === marketId || (p as any).predictionId === marketId || p.marketSlug === marketId || String(p.id) === String(marketId));
 
         // If not found, try to find in summaryDecisions (incoming agent decisions)
         if (!matchingPrediction && summaryDecisions && summaryDecisions.length > 0) {

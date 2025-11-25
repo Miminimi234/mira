@@ -512,6 +512,11 @@ export const AISummaryPanel = ({ onTradeClick, onDecisionsUpdate, selectedAgentF
           };
 
           const resolvedImg = resolveImageUrl(decision) || undefined;
+          // Normalize bet/investment fields from many possible aliases
+          const rawBet = decision.investmentUsd ?? decision.investment ?? decision.bet_amount ?? decision.betAmount ?? decision.bet ?? decision.amount ?? decision.invested ?? decision.volume ?? undefined;
+          const normalizedInvestment = (rawBet !== undefined && rawBet !== null) ? (typeof rawBet === 'number' ? rawBet : (isFinite(Number(rawBet)) ? Number(rawBet) : undefined)) : undefined;
+          const normalizedBetAmount = decision.bet_amount ?? decision.betAmount ?? decision.bet ?? decision.amount ?? decision.investment ?? undefined;
+
           newDecisions.push({
             id: decision.id || `${agentId}-${decision.marketId}-${index}`,
             agentId: frontendAgentId,
@@ -521,13 +526,16 @@ export const AISummaryPanel = ({ onTradeClick, onDecisionsUpdate, selectedAgentF
             action: action,
             // Prefer to display the market question from the canonical markets path when available
             market: resolveMarketQuestion(decision) || 'Unknown Market',
-            marketId: decision.marketId || decision.predictionId,
+            marketId: decision.marketId || decision.predictionId || decision.marketId,
             imageUrl: resolvedImg,
             decision: decisionValue,
             confidence: parseConfidence(decision.confidence),
             reasoning: reasoningText,
             fullReasoning: reasoningArray,
-            investmentUsd: action === 'TRADE' ? (decision.investmentUsd || 0) : undefined,
+            // Always include normalized investment / bet fields so downstream consumers (MarketDetailsPanel) see them
+            investmentUsd: normalizedInvestment ?? (action === 'TRADE' ? 0 : undefined),
+            bet_amount: normalizedBetAmount,
+            raw: decision,
             webResearchSummary: Array.isArray(decision.webResearchSummary) ? decision.webResearchSummary : [],
             decisionHistory: [],
           });
@@ -898,7 +906,9 @@ export const AISummaryPanel = ({ onTradeClick, onDecisionsUpdate, selectedAgentF
                               if (onTradeClick) onTradeClick(decision.marketId);
                             } catch (err) { /* ignore */ }
                             try {
-                              if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('mira-open-market', { detail: { marketId: decision.marketId } }));
+                              if (typeof window !== 'undefined') {
+                                window.dispatchEvent(new CustomEvent('mira-open-market', { detail: { prediction: decision, predictionId: decision.marketId, marketId: decision.marketId } }));
+                              }
                             } catch (err) { /* ignore */ }
                           }
                         }}
@@ -1050,7 +1060,9 @@ export const AISummaryPanel = ({ onTradeClick, onDecisionsUpdate, selectedAgentF
                                   console.log('[AISummaryPanel] View Market Details clicked:', decision.marketId);
                                   try { if (onTradeClick) onTradeClick(decision.marketId); } catch (err) { }
                                   try {
-                                    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('mira-open-market', { detail: { marketId: decision.marketId } }));
+                                    if (typeof window !== 'undefined') {
+                                      window.dispatchEvent(new CustomEvent('mira-open-market', { detail: { prediction: decision, predictionId: decision.marketId, marketId: decision.marketId } }));
+                                    }
                                   } catch (err) { }
                                 }}
                                 className="w-full px-3 py-2 bg-terminal-accent/10 hover:bg-terminal-accent/20 text-terminal-accent rounded-lg transition-colors text-[11px] font-mono border border-terminal-accent/30 cursor-pointer"
