@@ -296,7 +296,7 @@ export const PerformanceChart = ({ predictions = [], selectedMarketId = null, se
   // Active data source for the chart (real data)
   const activeData = chartData;
 
-  // Anchor start time to the first provided tick timestamp (not mount time).
+  // Anchor start tie to the first provided tick timestamp (not mount time).
   // The chart X domain will start at the timestamp of the first data point we have
   // and grow to the latest data point (`dataMax`). We initialize to `null` and set
   // this value once the initial data load provides the first timestamp.
