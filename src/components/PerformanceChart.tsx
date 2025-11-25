@@ -3,7 +3,7 @@ import { getDb } from '@/lib/firebase/client';
 import { get as dbGet, off as dbOff, query as dbQuery, ref as dbRef, limitToLast, onChildAdded, orderByChild, startAt } from 'firebase/database';
 import { ChevronDown, DollarSign, ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { CartesianGrid, ComposedChart, Customized, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, CartesianGrid, ComposedChart, Customized, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { TechnicalView } from "./TechnicalView";
 
 interface ChartDataPoint {
@@ -48,6 +48,15 @@ const AGENT_LOGO: Record<string, string> = {
   GPT5: "/GPT.png",
   QWEN: "/Qwen_logo.svg",
 };
+
+// In-memory storage for chart snapshots (replaces previous localStorage usage)
+let __inMemoryChartStorage: ChartDataPoint[] | null = null;
+function loadStoredChartData(): ChartDataPoint[] | null {
+  return __inMemoryChartStorage;
+}
+function saveStoredChartData(data: ChartDataPoint[]) {
+  __inMemoryChartStorage = Array.isArray(data) ? [...data] : null;
+}
 
 const agents = [
   { id: "GROK", name: "GROK", shortName: "GROK", color: "#F4E6A6", logoKey: "GROK" },
@@ -155,7 +164,6 @@ const createLineEndpoints = (selectedAgent: string | null, chartData: ChartDataP
   const chartLeft = offset.left;
   const chartTop = offset.top;
 
-  // Get Y domain from axis or calculate from data
   const yDomain = yAxis.domain || (() => {
     let min = Infinity;
     let max = -Infinity;
@@ -174,7 +182,6 @@ const createLineEndpoints = (selectedAgent: string | null, chartData: ChartDataP
 
   const chartHeight = yAxis.height || height - offset.top - offset.bottom;
 
-  // Manual scale calculation
   const scaleY = (value: number) => {
     const [min, max] = yDomain;
     if (max === min) return chartTop + chartHeight / 2;
@@ -184,90 +191,48 @@ const createLineEndpoints = (selectedAgent: string | null, chartData: ChartDataP
 
   return (
     <g>
-      {agents.map((agent) => {
-        // Only show endpoint if agent is visible (all agents or selected agent)
+      {agents.map((agent, idx) => {
         const isVisible = selectedAgent === null || selectedAgent === agent.id;
         if (!isVisible) return null;
         const value = lastDataPoint[agent.id as keyof ChartDataPoint] as number;
         if (value === undefined || value === null) return null;
 
-        // Calculate X position (right edge of chart)
         const xPos = chartLeft + chartWidth;
-
-        // Calculate Y position based on value
         const yPos = scaleY(value);
 
-        // Pill dimensions - much larger logo and pill for higher visibility per request
-        const connectorLength = 14;
-        const pillX = xPos + connectorLength;
-        const pillHeight = 40;
-        const logoSize = 36; // significantly larger logo
-        const pillPadding = { left: 10, right: 12, top: 6, bottom: 6 };
+        const connectorLength = 12;
+        const circleR = 14;
+        const boxHeight = 28;
+        const text = `$${Number(value).toFixed(0)}`;
+        const textWidthEstimate = Math.max(56, text.length * 9 + 8);
+        const gap = 8;
+        const badgeX = xPos + connectorLength + 8; // starting point for badge group
 
-        // Calculate pill width based on content
-        // Logo + gap + text width estimate + padding
-        const textWidth = `${value.toFixed(2)}`.length * 9 + 32; // larger estimate for clearer text
-        const pillWidth = logoSize + 10 + textWidth + pillPadding.left + pillPadding.right;
+        // clamp so badges don't overflow the container
+        const maxRight = chartLeft + chartWidth + 200; // works with chartMargin.right
+        const totalWidth = circleR * 2 + gap + textWidthEstimate + 8;
+        const clampedBadgeX = Math.min(badgeX, maxRight - totalWidth);
 
-        // Clamp pill to not overflow
-        const maxX = chartLeft + chartWidth + 220; // margin.right (increased)
-        const clampedPillX = Math.min(pillX, maxX - pillWidth);
+        const circleCX = clampedBadgeX + circleR;
+        const circleCY = yPos;
+        const boxX = clampedBadgeX + circleR * 2 + gap;
+        const boxY = yPos - boxHeight / 2;
 
         return (
-          <g key={agent.id}>
-            {/* Tiny horizontal connector line */}
-            <line
-              x1={xPos}
-              y1={yPos}
-              x2={xPos + connectorLength}
-              y2={yPos}
-              stroke={agent.color}
-              strokeWidth={1}
-            />
+          <g key={agent.id} style={{ pointerEvents: 'none' }}>
+            <line x1={xPos} y1={yPos} x2={xPos + connectorLength} y2={yPos} stroke={agent.color} strokeWidth={1} opacity={0.9} />
 
-            {/* Pill using foreignObject for HTML rendering */}
-            <foreignObject
-              x={clampedPillX}
-              y={yPos - pillHeight / 2}
-              width={pillWidth}
-              height={pillHeight}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  padding: `${pillPadding.top}px ${pillPadding.right}px ${pillPadding.bottom}px ${pillPadding.left}px`,
-                  background: "rgba(5, 6, 8, 0.9)",
-                  border: "none",
-                  borderRadius: "4px",
-                  height: `${pillHeight}px`,
-                  fontSize: "11px",
-                  fontWeight: 400,
-                  color: "#ffffff",
-                  fontFamily: "system-ui, -apple-system, sans-serif",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {/* Agent Logo */}
-                <img
-                  src={AGENT_LOGO[agent.logoKey]}
-                  alt={agent.name}
-                  width={logoSize}
-                  height={logoSize}
-                  style={{
-                    borderRadius: "50%",
-                    flexShrink: 0,
-                  }}
-                  onError={(e) => {
-                    // Fallback if image doesn't load
-                    (e.target as HTMLImageElement).style.display = "none";
-                  }}
-                />
-                {/* Latest Value */}
-                <span>${value.toFixed(2)}</span>
-              </div>
-            </foreignObject>
+            {/* Circle with logo */}
+            <circle cx={circleCX} cy={circleCY} r={circleR} fill="#0B0F17" stroke={agent.color} strokeWidth={1.5} />
+            {AGENT_LOGO[agent.logoKey] && (
+              <image href={AGENT_LOGO[agent.logoKey]} x={circleCX - (circleR - 2)} y={circleCY - (circleR - 2)} width={(circleR - 2) * 2} height={(circleR - 2) * 2} preserveAspectRatio="xMidYMid slice" />
+            )}
+
+            {/* Value rounded box */}
+            <g>
+              <rect x={boxX} y={boxY} rx={8} ry={8} width={textWidthEstimate + 8} height={boxHeight} fill="#0B0F17" stroke="rgba(255,255,255,0.06)" />
+              <text x={boxX + 12} y={boxY + boxHeight / 2 + 5} fill="#FFFFFF" fontSize={12} fontWeight={700} fontFamily="system-ui, -apple-system, sans-serif">{text}</text>
+            </g>
           </g>
         );
       })}
@@ -317,40 +282,40 @@ export const PerformanceChart = ({ predictions = [], selectedMarketId = null, se
   }, [selectedAgentId]);
   const [viewMode, setViewMode] = useState<"chart" | "technical">("chart");
   const [zoomLevel, setZoomLevel] = useState(1); // 1 = normal, >1 = zoomed in, <1 = zoomed out
+  // Horizontal zoom (controls width per data point)
+  const [horizontalZoom, setHorizontalZoom] = useState<number>(1);
+  const BASE_POINT_WIDTH = Number((import.meta.env.VITE_PERF_CHART_POINT_WIDTH as string) || 90);
 
-  // PERSISTENT chart data - use ref to maintain across unmounts, state for rendering
-  // CRITICAL: Use module-level ref to persist across ALL component instances
+  // PERSISTENT chart data - switched off localStorage: chart will be built from
+  // Firebase history on initial load and then updated via realtime child_added.
   const MAX_POINTS = Number((import.meta.env.VITE_PERF_CHART_POINTS as string) || 240);
-  const chartDataRef = useRef<ChartDataPoint[]>(getInitialChartData());
-  const [chartData, setChartData] = useState<ChartDataPoint[]>(() => {
-    // Initialize from ref if available, otherwise use initial data
-    const refData = chartDataRef.current;
-    if (refData.length > 0 && refData[0].DEEPSEEK !== STARTING_CAPITAL) {
-      // We have real data, use it
-      return [...refData];
+
+  // Start empty; we'll populate from Firebase (or fallback API) when data arrives.
+  const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
+
+  // Active data source for the chart (real data)
+  const activeData = chartData;
+
+  // Anchor start time to the first provided tick timestamp (not mount time).
+  // The chart X domain will start at the timestamp of the first data point we have
+  // and grow to the latest data point (`dataMax`). We initialize to `null` and set
+  // this value once the initial data load provides the first timestamp.
+  const startTimeMsRef = useRef<number | null>(null);
+
+  const formatTime = (ms: number) => {
+    try {
+      const d = new Date(ms);
+      return d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0') + ':' + d.getSeconds().toString().padStart(2, '0');
+    } catch (e) {
+      return String(ms);
     }
-    return getInitialChartData();
-  });
-  const [isLoading, setIsLoading] = useState(() => {
-    // Only show loading if we don't have real data
-    return chartDataRef.current.length === 0 || chartDataRef.current[0].DEEPSEEK === STARTING_CAPITAL;
-  });
+  };
+
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const lastAgentPnlRef = useRef<Map<string, number>>(new Map());
   const animationDisabled = true;
 
-  // CRITICAL: Restore chart data from ref whenever component mounts or becomes visible
-  // This ensures data persists even if component was unmounted
-  useEffect(() => {
-    const refData = chartDataRef.current;
-    // Only restore if we have real data (not just initial data)
-    if (refData.length > 0 && refData[0].DEEPSEEK !== STARTING_CAPITAL) {
-      if (chartData.length === 0 || chartData[0].DEEPSEEK === STARTING_CAPITAL) {
-        console.log('[Chart] Restoring chart data from ref:', refData.length, 'points');
-        setChartData([...refData]);
-        setIsLoading(false);
-      }
-    }
-  }, [chartData.length]);
+  // No in-memory module-level ref: we use localStorage for persistence.
 
   // Fetch historical snapshots from Firebase RTDB (preferred) and subscribe to new snapshots.
   // If Firebase is not configured or fails, fall back to the previous API polling approach.
@@ -452,9 +417,10 @@ export const PerformanceChart = ({ predictions = [], selectedMarketId = null, se
           if (!hasChanges && prev.length > 0) return prev;
           if (isLoading) {
             setIsLoading(false);
-            if (chartDataRef.current.length === 0 || chartDataRef.current[0].DEEPSEEK === STARTING_CAPITAL) {
+            const stored = loadStoredChartData();
+            if (!stored || stored[0].DEEPSEEK === STARTING_CAPITAL) {
               const firstData = [newDataPoint];
-              chartDataRef.current = firstData;
+              saveStoredChartData(firstData);
               return firstData;
             } else return prev;
           }
@@ -469,7 +435,7 @@ export const PerformanceChart = ({ predictions = [], selectedMarketId = null, se
           }
           updated.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
           const finalData = updated.slice(-MAX_POINTS);
-          chartDataRef.current = finalData;
+          saveStoredChartData(finalData);
           return finalData;
         });
       } catch (error) {
@@ -511,8 +477,8 @@ export const PerformanceChart = ({ predictions = [], selectedMarketId = null, se
           if (isMounted) {
             // Debug: log loaded snapshots when enabled via env
             if (import.meta.env.VITE_DEBUG_PERF_CHART === 'true') console.debug('[PerformanceChart] loaded snapshots', points);
-            chartDataRef.current = points.slice(-MAX_POINTS);
-            setChartData([...chartDataRef.current]);
+            const finalPoints = points.slice(-MAX_POINTS);
+            setChartData([...finalPoints]);
             setIsLoading(false);
           }
         }
@@ -539,11 +505,9 @@ export const PerformanceChart = ({ predictions = [], selectedMarketId = null, se
             const last = prev[prev.length - 1];
             if (last && last.timestamp === pt.timestamp) {
               const updated = [...prev.slice(0, -1), pt];
-              chartDataRef.current = updated.slice(-MAX_POINTS);
               return updated;
             }
             const updated = [...prev, pt].slice(-MAX_POINTS);
-            chartDataRef.current = updated;
             return updated;
           });
         };
@@ -607,24 +571,39 @@ export const PerformanceChart = ({ predictions = [], selectedMarketId = null, se
 
   // Calculate base Y-axis domain for proper scaling
   const { baseMinValue, baseMaxValue } = useMemo(() => {
-    let min = Infinity;
-    let max = -Infinity;
-    chartData.forEach((point) => {
+    // Center the Y domain around the STARTING_CAPITAL so that the baseline
+    // always appears visually in the middle of the chart.
+    // Compute the maximum absolute deviation from STARTING_CAPITAL across
+    // all points, then create a symmetric domain around STARTING_CAPITAL.
+    let maxDeviation = 0;
+    activeData.forEach((point) => {
       agents.forEach((agent) => {
         const value = point[agent.id as keyof ChartDataPoint] as number;
-        if (value !== undefined && value !== null) {
-          min = Math.min(min, value);
-          max = Math.max(max, value);
+        if (value !== undefined && value !== null && !isNaN(value)) {
+          const dev = Math.abs(value - STARTING_CAPITAL);
+          if (dev > maxDeviation) maxDeviation = dev;
         }
       });
     });
-    // Add some padding
-    const padding = (max - min) * 0.1;
+
+    // If no meaningful data, provide a larger default range so all models
+    // appear separated on the chart by default.
+    if (!isFinite(maxDeviation) || maxDeviation <= 0) maxDeviation = 2000; // default deviation
+
+    // Add a small padding to make the curves breathe visually
+    const padding = Math.max(200, Math.round(maxDeviation * 0.12));
+    const halfRange = Math.ceil(maxDeviation + padding);
+
+    const computedMin = Math.max(0, STARTING_CAPITAL - halfRange);
+    const computedMax = STARTING_CAPITAL + halfRange;
+
     return {
-      baseMinValue: Math.max(0, Math.floor(min - padding)),
-      baseMaxValue: Math.ceil(max + padding),
+      baseMinValue: computedMin,
+      baseMaxValue: computedMax,
     };
-  }, [chartData]);
+  }, [activeData]);
+
+  // (debug logging removed)
 
   // Calculate zoomed Y-axis domain
   const { minValue, maxValue } = useMemo(() => {
@@ -637,7 +616,7 @@ export const PerformanceChart = ({ predictions = [], selectedMarketId = null, se
 
     // Compute raw maximum from the most recent data point (avoid old spikes inflating scale)
     let rawMax = -Infinity;
-    const lastPoint = chartData && chartData.length ? chartData[chartData.length - 1] : null;
+    const lastPoint = activeData && activeData.length ? activeData[activeData.length - 1] : null;
     if (lastPoint) {
       agents.forEach((agent) => {
         const v = Number((lastPoint as any)[agent.id]);
@@ -657,7 +636,7 @@ export const PerformanceChart = ({ predictions = [], selectedMarketId = null, se
       minValue: computedMin,
       maxValue: displayedMax,
     };
-  }, [baseMinValue, baseMaxValue, zoomLevel, chartData]);
+  }, [baseMinValue, baseMaxValue, zoomLevel, activeData]);
 
   const handleZoomIn = () => {
     setZoomLevel(prev => Math.min(prev * 1.5, 5)); // Max 5x zoom
@@ -665,6 +644,17 @@ export const PerformanceChart = ({ predictions = [], selectedMarketId = null, se
 
   const handleZoomOut = () => {
     setZoomLevel(prev => Math.max(prev / 1.5, 0.5)); // Min 0.5x zoom (zoom out)
+  };
+
+  const handleHZoomIn = () => {
+    setHorizontalZoom(prev => Math.min(prev * 1.5, 6));
+    // Apply computed width immediately so the chart updates
+    setUserInnerWidthPx(prev => Math.ceil((activeData.length * BASE_POINT_WIDTH) * Math.min(prev ? prev / BASE_POINT_WIDTH : 1, 6)));
+  };
+
+  const handleHZoomOut = () => {
+    setHorizontalZoom(prev => Math.max(prev / 1.5, 0.25));
+    setUserInnerWidthPx(prev => Math.ceil((activeData.length * BASE_POINT_WIDTH) * Math.max(prev ? prev / BASE_POINT_WIDTH : 1, 0.25)));
   };
 
   // Generate Y-axis ticks (ensure unique values)
@@ -697,14 +687,17 @@ export const PerformanceChart = ({ predictions = [], selectedMarketId = null, se
 
   // Store domain values for LineEndpoints
   const yDomain = [minValue, maxValue];
+  // user-controlled inner width (may be set by drag-resize); declare early to avoid TDZ
+  const [userInnerWidthPx, setUserInnerWidthPx] = useState<number | null>(null);
 
   // Compute inner chart width to allow horizontal scrolling when there are many points
-  const chartInnerWidth = Math.max(900, chartData.length * 90);
+  const computedChartInnerWidth = Math.max(900, Math.ceil(activeData.length * BASE_POINT_WIDTH * horizontalZoom));
+  const chartInnerWidth = userInnerWidthPx ?? computedChartInnerWidth;
   // Chart visual sizing
   // Compute a stable pixel chart height so Recharts' ResponsiveContainer has a concrete height.
   const [chartHeightPx, setChartHeightPx] = useState<number>(() => Math.max(320, Math.floor((typeof window !== 'undefined' ? window.innerHeight : 800) - 160)));
   const chartHeight = chartHeightPx;
-  const chartMargin = { top: 20, right: 160, bottom: 30, left: 0 };
+  const chartMargin = { top: 20, right: 120, bottom: 30, left: 0 };
   const axisWidth = 80; // reserved left axis column width (wider to better fill sidebar)
   const chartInnerHeight = Math.max(120, chartHeight - chartMargin.top - chartMargin.bottom);
 
@@ -739,7 +732,6 @@ export const PerformanceChart = ({ predictions = [], selectedMarketId = null, se
   const dragStartXRef = useRef(0);
   const startInnerWidthRef = useRef(0);
 
-  const [userInnerWidthPx, setUserInnerWidthPx] = useState<number | null>(null);
 
   // Scroll-drag refs (drag inside chart to pan horizontally)
   const draggingScrollRef = useRef(false);
@@ -790,6 +782,49 @@ export const PerformanceChart = ({ predictions = [], selectedMarketId = null, se
   // Scroll handling
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
+  // Mouse-wheel handler on the chart area:
+  // - Ctrl/Cmd + wheel => horizontal zoom
+  // - wheel only (no mod) => horizontal pan (scroll)
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const onWheel = (e: WheelEvent) => {
+      const isMod = e.ctrlKey || e.metaKey;
+
+      if (isMod) {
+        // Zoom horizontally
+        e.preventDefault();
+        const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+        setHorizontalZoom(prev => {
+          const next = Math.min(6, Math.max(0.25, +(prev * factor).toFixed(4)));
+          const nextWidth = Math.ceil(activeData.length * BASE_POINT_WIDTH * next);
+          setUserInnerWidthPx(nextWidth);
+          return next;
+        });
+        return;
+      }
+
+      // No modifier: perform horizontal panning inside the chart container
+      // Only hijack the wheel if horizontal scrolling is possible
+      const canScrollHorizontally = el.scrollWidth > el.clientWidth + 1;
+      if (!canScrollHorizontally) return;
+
+      // Prevent vertical page scrolling while panning the chart
+      e.preventDefault();
+
+      // Move scrollLeft by deltaY (invert as needed) and clamp
+      // Use a multiplier to make panning feel natural
+      const multiplier = 1; // adjust sensitivity if needed
+      const next = Math.max(0, Math.min(el.scrollWidth - el.clientWidth, el.scrollLeft + e.deltaY * multiplier));
+      el.scrollLeft = next;
+    };
+
+    const opts = { passive: false, capture: true } as AddEventListenerOptions;
+    el.addEventListener('wheel', onWheel as any, opts);
+    return () => el.removeEventListener('wheel', onWheel as any, opts as any);
+  }, [activeData.length, BASE_POINT_WIDTH]);
+
   // Auto-scroll to right (latest) when new data arrives, unless user scrolled manually
   useLayoutEffect(() => {
     const el = scrollRef.current;
@@ -801,7 +836,44 @@ export const PerformanceChart = ({ predictions = [], selectedMarketId = null, se
       // fallback
       el.scrollLeft = Math.max(0, el.scrollWidth - el.clientWidth);
     }
-  }, [chartData.length]);
+  }, [activeData.length]);
+
+  // Ensure `startTimeMsRef` is set to the first data point timestamp we have.
+  // We only set it once (when null) so the visible window anchors to the first
+  // provided tick rather than the component mount time.
+  useEffect(() => {
+    if (startTimeMsRef.current != null) return;
+    if (activeData && activeData.length > 0) {
+      const firstTs = activeData[0].timestamp ?? null;
+      if (firstTs && typeof firstTs === 'number') {
+        startTimeMsRef.current = firstTs;
+      } else {
+        // Fallback: use the earliest numeric timestamp found in the array
+        const earliest = activeData.reduce((acc, p) => Math.min(acc, p.timestamp ?? acc), Infinity);
+        if (isFinite(earliest)) startTimeMsRef.current = earliest;
+      }
+    }
+  }, [activeData]);
+
+  // Compute X axis ticks at 5 second (5000ms) intervals starting from the first
+  // provided tick (startTimeMsRef) up to the latest data point timestamp.
+  const ticksForXAxis = useMemo(() => {
+    const start = startTimeMsRef.current ?? (activeData && activeData[0]?.timestamp) ?? Date.now();
+    const end = (activeData && activeData.length ? activeData[activeData.length - 1].timestamp : start) ?? start;
+    if (end <= start) return [start];
+    const ticks: number[] = [];
+    // Use exact 5000ms steps from the first tick timestamp
+    const STEP = 5000;
+    // Prevent extremely large arrays in degenerate cases
+    const maxSteps = 1000;
+    let steps = 0;
+    for (let t = start; t <= end && steps < maxSteps; t += STEP, steps++) {
+      ticks.push(t);
+    }
+    // Ensure last tick includes end if it wasn't hit exactly
+    if (ticks.length === 0 || ticks[ticks.length - 1] < end) ticks.push(end);
+    return ticks;
+  }, [activeData]);
 
   return (
     <div className="h-full flex flex-col bg-background">
@@ -828,6 +900,7 @@ export const PerformanceChart = ({ predictions = [], selectedMarketId = null, se
           <span className="sm:hidden">&gt; PERF</span>
         </span>
         <div className="flex gap-1 sm:gap-2 items-center min-w-0 flex-shrink">
+          {/* (sample toggle removed) */}
           {/* Zoom Controls - only show in chart view */}
           {viewMode === "chart" && (
             <div className="flex gap-0.5 sm:gap-1 items-center border-r border-border pr-1 sm:pr-2 mr-1 sm:mr-2 flex-shrink-0">
@@ -844,6 +917,25 @@ export const PerformanceChart = ({ predictions = [], selectedMarketId = null, se
                 title="Zoom In"
               >
                 <ZoomIn className="h-2.5 sm:h-3 w-2.5 sm:w-3" />
+              </button>
+            </div>
+          )}
+          {/* Horizontal zoom controls */}
+          {viewMode === "chart" && (
+            <div className="flex gap-0.5 sm:gap-1 items-center border-r border-border pr-1 sm:pr-2 mr-1 sm:mr-2 flex-shrink-0">
+              <button
+                onClick={handleHZoomOut}
+                className="text-[9px] sm:text-xs px-1 sm:px-1.5 py-0.5 sm:py-1 border border-border rounded-full hover:bg-muted transition-colors flex items-center justify-center"
+                title="Horizontal Zoom Out"
+              >
+                <span style={{ fontSize: 12, lineHeight: 1 }}>H-</span>
+              </button>
+              <button
+                onClick={handleHZoomIn}
+                className="text-[9px] sm:text-xs px-1 sm:px-1.5 py-0.5 sm:py-1 border border-border rounded-full hover:bg-muted transition-colors flex items-center justify-center"
+                title="Horizontal Zoom In"
+              >
+                <span style={{ fontSize: 12, lineHeight: 1 }}>H+</span>
               </button>
             </div>
           )}
@@ -948,6 +1040,7 @@ export const PerformanceChart = ({ predictions = [], selectedMarketId = null, se
                 style={{ height: chartHeight, overflowX: 'auto', overflowY: 'hidden', flex: 1, position: 'relative' }}
               >
                 <div style={{ width: userInnerWidthPx ?? chartInnerWidth, height: '100%', position: 'relative' }}>
+                  {/* debug overlay removed */}
                   {/* Right-edge handle remains for large drags (kept simple) */}
                   <div
                     onMouseDown={(e) => {
@@ -961,35 +1054,64 @@ export const PerformanceChart = ({ predictions = [], selectedMarketId = null, se
                   />
                   <ResponsiveContainer width={chartInnerWidth} height="100%">
                     <ComposedChart
-                      data={chartData}
+                      data={activeData}
                       margin={{ top: chartMargin.top, right: chartMargin.right, bottom: chartMargin.bottom, left: 0 }}
                       style={{ backgroundColor: "transparent" }}
                     >
-                      <CartesianGrid
-                        stroke="#242935"
-                        strokeWidth={1}
-                        vertical={false}
-                        horizontal={true}
-                      />
+                      <defs>
+                        {/* Soft blur filter used for drip areas only (reduced blur so lines stay crisp) */}
+                        <filter id="softGlow" x="-30%" y="-30%" width="160%" height="160%">
+                          <feGaussianBlur stdDeviation="4" result="coloredBlur" />
+                          <feMerge>
+                            <feMergeNode in="coloredBlur" />
+                            <feMergeNode in="SourceGraphic" />
+                          </feMerge>
+                        </filter>
+                        {agents.map((agent) => (
+                          <>
+                            <linearGradient key={`main-${agent.id}`} id={`grad-${agent.id}`} x1="0" x2="0" y1="0" y2="1">
+                              <stop offset="0%" stopColor={agent.color} stopOpacity={0.9} />
+                              <stop offset="18%" stopColor={agent.color} stopOpacity={0.6} />
+                              <stop offset="45%" stopColor={agent.color} stopOpacity={0.35} />
+                              <stop offset="100%" stopColor={agent.color} stopOpacity={0.12} />
+                            </linearGradient>
+
+                            {/* Drip gradient: stronger near the line, long fade to transparent */}
+                            <linearGradient key={`drip-${agent.id}`} id={`grad-drip-${agent.id}`} x1="0" x2="0" y1="0" y2="1">
+                              <stop offset="0%" stopColor={agent.color} stopOpacity={0.7} />
+                              <stop offset="20%" stopColor={agent.color} stopOpacity={0.46} />
+                              <stop offset="50%" stopColor={agent.color} stopOpacity={0.22} />
+                              <stop offset="100%" stopColor={agent.color} stopOpacity={0.06} />
+                            </linearGradient>
+                          </>
+                        ))}
+                      </defs>
+
+                      {/* Additional styles for drip effect via SVG filter and CSS */}
+                      <style>{`
+                        .drip-area { filter: url(#softGlow); opacity: 0.85; mix-blend-mode: multiply; }
+                      `}</style>
+
+                      <CartesianGrid stroke="#1b1e23" strokeWidth={1} vertical={false} horizontal={true} />
 
                       {/* Reference Line - Faint white dashed */}
-                      <ReferenceLine
-                        y={STARTING_CAPITAL}
-                        stroke="rgba(255, 255, 255, 0.2)"
-                        strokeWidth={1}
-                        strokeDasharray="5 5"
-                      />
+                      {/* subtle baseline */}
+                      <ReferenceLine y={STARTING_CAPITAL} stroke="rgba(255,255,255,0.06)" strokeWidth={1} />
 
                       <XAxis
-                        dataKey="time"
+                        dataKey="timestamp"
+                        type="number"
+                        domain={["dataMin", "dataMax"]}
+                        ticks={ticksForXAxis}
                         axisLine={false}
                         tickLine={false}
-                        interval={Math.max(0, Math.floor(chartData.length / 8))}
+                        tickCount={8}
                         tick={{
                           fill: "#C6CBD9",
                           fontSize: 11,
                           fontFamily: "system-ui, -apple-system, sans-serif",
                         }}
+                        tickFormatter={(val: any) => formatTime(Number(val))}
                       />
 
                       {/* Keep an invisible YAxis so Recharts retains correct scaling */}
@@ -1000,20 +1122,65 @@ export const PerformanceChart = ({ predictions = [], selectedMarketId = null, se
                         cursor={{ stroke: "#3A404B", strokeWidth: 1, strokeDasharray: "none" }}
                       />
 
-                      {/* Clean Lines Only - No Areas */}
+                      {/* Smooth Areas (all agents) - render first so Lines appear on top */}
                       {agents.map((agent) => {
                         const isVisible = selectedAgent === null || selectedAgent === agent.id;
-
                         if (!isVisible) return null;
 
+                        // Use gradient fills (drip + main) and moderate opacity so color appears clearly
+                        const dripFillOpacity = 0.65;
+                        const mainFillOpacity = 0.6;
+
+                        return (
+                          <g key={`areas-${agent.id}`}>
+                            <Area
+                              type="monotone"
+                              connectNulls
+                              dataKey={agent.id}
+                              stroke="none"
+                              fill={`url(#grad-drip-${agent.id})`}
+                              fillOpacity={dripFillOpacity}
+                              dot={false}
+                              activeDot={false}
+                              isAnimationActive={false}
+                              className="drip-area"
+                              style={{ mixBlendMode: 'normal' }}
+                            />
+                            <Area
+                              type="monotone"
+                              connectNulls
+                              dataKey={agent.id}
+                              stroke={agent.color}
+                              strokeWidth={0}
+                              strokeOpacity={0}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              fill={`url(#grad-${agent.id})`}
+                              fillOpacity={mainFillOpacity}
+                              dot={false}
+                              activeDot={false}
+                              isAnimationActive={false}
+                              style={{ mixBlendMode: 'multiply' }}
+                            />
+                          </g>
+                        );
+                      })}
+
+                      {/* Lines (render after Areas so strokes sit on top) */}
+                      {agents.map((agent) => {
+                        const isVisible = selectedAgent === null || selectedAgent === agent.id;
+                        if (!isVisible) return null;
+
+                        // Use agent color for sample-mode too; slightly thicker strokes for readability
                         return (
                           <Line
-                            key={agent.id}
-                            type="linear"
+                            key={`line-${agent.id}`}
+                            type="monotone"
                             connectNulls
                             dataKey={agent.id}
                             stroke={agent.color}
                             strokeWidth={2}
+                            strokeOpacity={1}
                             dot={false}
                             activeDot={{
                               r: 4,
@@ -1021,15 +1188,19 @@ export const PerformanceChart = ({ predictions = [], selectedMarketId = null, se
                               strokeWidth: 2,
                               stroke: "#050608",
                             }}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
                             isAnimationActive={false}
                           />
                         );
                       })}
 
+
+
                       {/* Brush for horizontal navigation (removed to declutter UI) */}
 
                       {/* Agents at End of Lines */}
-                      <Customized component={createLineEndpoints(selectedAgent, chartData)} />
+                      <Customized component={createLineEndpoints(selectedAgent, activeData)} />
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>

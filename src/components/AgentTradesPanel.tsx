@@ -1,7 +1,7 @@
 // Removed framer-motion - no animations wanted
-import { useEffect, useState, MouseEvent } from "react";
-import { X, TrendingUp, TrendingDown, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ExternalLink, TrendingDown, TrendingUp, X } from "lucide-react";
+import { MouseEvent, useEffect, useState } from "react";
 
 interface Trade {
   id: string;
@@ -59,16 +59,16 @@ const formatTimeAgo = (date: Date) => {
 };
 
 export const AgentTradesPanel = ({ agentId, agentName, agentEmoji, trades, onClose, onTradeClick }: AgentTradesPanelProps) => {
-  console.log(`[AgentTradesPanel] Rendering for ${agentId}:`, { 
-    tradesCount: trades.length, 
+  console.log(`[AgentTradesPanel] Rendering for ${agentId}:`, {
+    tradesCount: trades.length,
     trades: trades,
-    agentName 
+    agentName
   });
-  
+
   const sortedTrades = [...trades].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
   const openTrades = sortedTrades.filter(t => t.status === "OPEN");
   const closedTrades = sortedTrades.filter(t => t.status === "CLOSED");
-  
+
   console.log(`[AgentTradesPanel] ${agentId} - Open: ${openTrades.length}, Closed: ${closedTrades.length}`);
   const totalPnl = closedTrades.reduce((sum, trade) => sum + (trade.pnl || 0), 0);
   const [expandedTradeId, setExpandedTradeId] = useState<string | null>(trades[0]?.id ?? null);
@@ -92,16 +92,20 @@ export const AgentTradesPanel = ({ agentId, agentName, agentEmoji, trades, onClo
     if (onTradeClick) {
       onTradeClick(trade.market, trade.predictionId);
     }
+    try {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('mira-open-market', { detail: { marketId: trade.predictionId, marketName: trade.market } }));
+      }
+    } catch (err) { }
   };
 
   const renderTradeCard = (trade: Trade, section: "OPEN" | "CLOSED") => {
     const isExpanded = expandedTradeId === trade.id;
     const decisionPill = (
-      <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
-        trade.decision === "YES"
+      <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${trade.decision === "YES"
           ? "bg-trade-yes/15 text-trade-yes border border-trade-yes/30"
           : "bg-trade-no/15 text-trade-no border border-trade-no/30"
-      }`}>
+        }`}>
         {trade.decision === "YES" ? (
           <TrendingUp className="w-2.5 h-2.5" />
         ) : (
@@ -115,11 +119,10 @@ export const AgentTradesPanel = ({ agentId, agentName, agentEmoji, trades, onClo
       <div
         key={trade.id}
         onClick={() => setExpandedTradeId(prev => prev === trade.id ? null : trade.id)}
-        className={`border rounded-2xl px-3 py-2.5 cursor-pointer ${
-          isExpanded
+        className={`border rounded-2xl px-3 py-2.5 cursor-pointer ${isExpanded
             ? "border-terminal-accent/40 bg-bg-elevated shadow-glow"
             : "border-border bg-bg-card/80 hover:border-terminal-accent/40"
-        }`}
+          }`}
       >
         <div className="flex items-center justify-between gap-3">
           <div className="flex-1 min-w-0">
@@ -141,11 +144,10 @@ export const AgentTradesPanel = ({ agentId, agentName, agentEmoji, trades, onClo
             {trade.confidence}% CONF
           </div>
           {section === "CLOSED" && typeof trade.pnl === 'number' && (
-            <div className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${
-              trade.pnl >= 0
+            <div className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${trade.pnl >= 0
                 ? "bg-trade-yes/15 text-trade-yes border border-trade-yes/30"
                 : "bg-trade-no/15 text-trade-no border border-trade-no/30"
-            }`}>
+              }`}>
               {trade.pnl >= 0 ? '+' : ''}${trade.pnl.toFixed(2)}
             </div>
           )}
@@ -162,64 +164,64 @@ export const AgentTradesPanel = ({ agentId, agentName, agentEmoji, trades, onClo
         </div>
 
         {isExpanded && (
-            <div
-              key={`${trade.id}-details`}
-              className="overflow-hidden"
-            >
-              <div className="mt-3 space-y-2">
-                {trade.summaryDecision && (
-                  <div className="text-[12px] text-foreground leading-relaxed font-mono" style={{ fontWeight: 500 }}>
-                    {trade.summaryDecision}
-                  </div>
-                )}
-                {trade.reasoningBullets && trade.reasoningBullets.length > 0 ? (
-                  <ul className="text-[12px] text-text-secondary leading-relaxed space-y-1 pl-4 list-disc">
-                    {trade.reasoningBullets.map((reason, idx) => (
-                      <li key={`${trade.id}-reason-${idx}`}>{reason}</li>
-                    ))}
-                  </ul>
-                ) : trade.reasoning ? (
-                  <div className="text-[12px] text-text-secondary leading-relaxed">
-                    {trade.reasoning}
-                  </div>
-                ) : null}
-                {trade.webResearchSummary && trade.webResearchSummary.length > 0 && (
-                  <div className="text-[11px] text-muted-foreground font-mono border border-terminal-accent/30 rounded-lg p-2 bg-terminal-accent/5">
-                    <div className="uppercase tracking-[0.1em] mb-1 text-terminal-accent">Web Research</div>
-                    {trade.webResearchSummary.slice(0, 2).map((source, idx) => (
-                      <div key={`${trade.id}-web-${idx}`} className="text-[11px] text-foreground mb-1">
-                        <span className="font-semibold text-terminal-accent">{source.source}:</span> {source.snippet || source.title}
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <div className="flex flex-wrap gap-2 pt-1">
-                  <button
-                    onClick={(event) => handleTradeSelect(trade, event)}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-mono rounded-lg border border-terminal-accent/40 text-terminal-accent hover:bg-terminal-accent/10 transition-colors"
-                  >
-                    View Market →
-                  </button>
-                  {(trade.marketSlug || trade.conditionId) && (
-                    <a
-                      href={
-                        trade.marketSlug
-                          ? `https://polymarket.com/event/${trade.marketSlug}`
-                          : `https://polymarket.com/condition/${trade.conditionId}`
-                      }
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-terminal-accent/10 text-terminal-accent rounded hover:bg-terminal-accent/20 transition-colors text-[11px] font-mono"
-                    >
-                      <ExternalLink className="w-3 h-3" />
-                      View Market
-                    </a>
-                  )}
+          <div
+            key={`${trade.id}-details`}
+            className="overflow-hidden"
+          >
+            <div className="mt-3 space-y-2">
+              {trade.summaryDecision && (
+                <div className="text-[12px] text-foreground leading-relaxed font-mono" style={{ fontWeight: 500 }}>
+                  {trade.summaryDecision}
                 </div>
+              )}
+              {trade.reasoningBullets && trade.reasoningBullets.length > 0 ? (
+                <ul className="text-[12px] text-text-secondary leading-relaxed space-y-1 pl-4 list-disc">
+                  {trade.reasoningBullets.map((reason, idx) => (
+                    <li key={`${trade.id}-reason-${idx}`}>{reason}</li>
+                  ))}
+                </ul>
+              ) : trade.reasoning ? (
+                <div className="text-[12px] text-text-secondary leading-relaxed">
+                  {trade.reasoning}
+                </div>
+              ) : null}
+              {trade.webResearchSummary && trade.webResearchSummary.length > 0 && (
+                <div className="text-[11px] text-muted-foreground font-mono border border-terminal-accent/30 rounded-lg p-2 bg-terminal-accent/5">
+                  <div className="uppercase tracking-[0.1em] mb-1 text-terminal-accent">Web Research</div>
+                  {trade.webResearchSummary.slice(0, 2).map((source, idx) => (
+                    <div key={`${trade.id}-web-${idx}`} className="text-[11px] text-foreground mb-1">
+                      <span className="font-semibold text-terminal-accent">{source.source}:</span> {source.snippet || source.title}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button
+                  onClick={(event) => handleTradeSelect(trade, event)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-mono rounded-lg border border-terminal-accent/40 text-terminal-accent hover:bg-terminal-accent/10 transition-colors"
+                >
+                  View Market →
+                </button>
+                {(trade.marketSlug || trade.conditionId) && (
+                  <a
+                    href={
+                      trade.marketSlug
+                        ? `https://polymarket.com/event/${trade.marketSlug}`
+                        : `https://polymarket.com/condition/${trade.conditionId}`
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-terminal-accent/10 text-terminal-accent rounded hover:bg-terminal-accent/20 transition-colors text-[11px] font-mono"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    View Market
+                  </a>
+                )}
               </div>
             </div>
-          )}
+          </div>
+        )}
       </div>
     );
   };

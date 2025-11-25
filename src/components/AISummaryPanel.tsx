@@ -893,8 +893,13 @@ export const AISummaryPanel = ({ onTradeClick, onDecisionsUpdate, selectedAgentF
                       <div
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (decision.marketId && onTradeClick) {
-                            onTradeClick(decision.marketId);
+                          if (decision.marketId) {
+                            try {
+                              if (onTradeClick) onTradeClick(decision.marketId);
+                            } catch (err) { /* ignore */ }
+                            try {
+                              if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('mira-open-market', { detail: { marketId: decision.marketId } }));
+                            } catch (err) { /* ignore */ }
                           }
                         }}
                         className={`text-[13px] font-mono mb-2 ${decision.marketId && onTradeClick ? 'text-terminal-accent cursor-pointer hover:underline' : 'text-foreground'}`}
@@ -1043,9 +1048,10 @@ export const AISummaryPanel = ({ onTradeClick, onDecisionsUpdate, selectedAgentF
                                   e.stopPropagation();
                                   e.preventDefault();
                                   console.log('[AISummaryPanel] View Market Details clicked:', decision.marketId);
-                                  if (decision.marketId) {
-                                    onTradeClick(decision.marketId);
-                                  }
+                                  try { if (onTradeClick) onTradeClick(decision.marketId); } catch (err) { }
+                                  try {
+                                    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('mira-open-market', { detail: { marketId: decision.marketId } }));
+                                  } catch (err) { }
                                 }}
                                 className="w-full px-3 py-2 bg-terminal-accent/10 hover:bg-terminal-accent/20 text-terminal-accent rounded-lg transition-colors text-[11px] font-mono border border-terminal-accent/30 cursor-pointer"
                                 style={{ pointerEvents: 'auto' }}

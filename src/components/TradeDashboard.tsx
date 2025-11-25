@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { X, TrendingUp, TrendingDown, ArrowUpDown } from "lucide-react";
+import { ArrowUpDown, TrendingDown, TrendingUp, X } from "lucide-react";
 import { useState } from "react";
 
 export interface TradeHistory {
@@ -21,6 +21,7 @@ interface TradeDashboardProps {
 
 export const TradeDashboard = ({ isOpen, onClose, trades }: TradeDashboardProps) => {
   const [sortBy, setSortBy] = useState<'date' | 'profit' | 'confidence'>('date');
+  const [decisionFilterLocal, setDecisionFilterLocal] = useState<'all' | 'yes' | 'no'>('all');
 
   const sortedTrades = [...trades].sort((a, b) => {
     switch (sortBy) {
@@ -48,7 +49,18 @@ export const TradeDashboard = ({ isOpen, onClose, trades }: TradeDashboardProps)
         <div className="p-6 border-b border-border bg-muted/30">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="text-2xl font-bold">Trade Dashboard</h2>
+              <div className="flex items-center gap-4">
+                <h2 className="text-2xl font-bold">Trade Dashboard</h2>
+                <div className="flex items-center gap-2">
+                  {(['all', 'yes', 'no'] as const).map((f) => (
+                    <button
+                      key={f}
+                      onClick={() => { setDecisionFilterLocal(f); window.dispatchEvent(new CustomEvent('mira-decision-filter', { detail: f })); }}
+                      className={`px-2 py-1 rounded-full text-xs font-medium transition-colors ${decisionFilterLocal === f ? 'bg-accent text-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
+                    >{f.toUpperCase()}</button>
+                  ))}
+                </div>
+              </div>
               <p className="text-sm text-muted-foreground">Live trading history</p>
             </div>
             <motion.button
@@ -91,11 +103,10 @@ export const TradeDashboard = ({ isOpen, onClose, trades }: TradeDashboardProps)
               <button
                 key={sort}
                 onClick={() => setSortBy(sort)}
-                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                  sortBy === sort
+                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${sortBy === sort
                     ? 'bg-accent text-foreground'
                     : 'bg-muted text-muted-foreground hover:bg-muted/80'
-                }`}
+                  }`}
               >
                 {sort.charAt(0).toUpperCase() + sort.slice(1)}
               </button>
@@ -116,20 +127,18 @@ export const TradeDashboard = ({ isOpen, onClose, trades }: TradeDashboardProps)
               <div className="flex items-start justify-between mb-2">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className={`px-2 py-0.5 rounded text-xs font-bold ${
-                      trade.position === 'YES' 
-                        ? 'bg-trade-yes/20 text-foreground border border-trade-yes' 
+                    <span className={`px-2 py-0.5 rounded text-xs font-bold ${trade.position === 'YES'
+                        ? 'bg-trade-yes/20 text-foreground border border-trade-yes'
                         : 'bg-trade-no/20 text-foreground border border-trade-no'
-                    }`}>
+                      }`}>
                       {trade.position}
                     </span>
                     <span className="text-xs text-muted-foreground">{trade.timestamp}</span>
                   </div>
                   <h4 className="font-medium text-sm leading-tight mb-2">{trade.question}</h4>
                 </div>
-                <div className={`flex items-center gap-1 font-bold ${
-                  trade.profitLoss >= 0 ? 'text-trade-yes' : 'text-trade-no'
-                }`}>
+                <div className={`flex items-center gap-1 font-bold ${trade.profitLoss >= 0 ? 'text-trade-yes' : 'text-trade-no'
+                  }`}>
                   {trade.profitLoss >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
                   <span>{trade.profitLoss >= 0 ? '+' : ''}${trade.profitLoss.toFixed(2)}</span>
                 </div>

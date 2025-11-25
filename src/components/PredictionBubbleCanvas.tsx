@@ -26,6 +26,19 @@ export default function PredictionBubbleCanvas({ items = [], onBubbleClick }: Pr
     const [fetchedItems, setFetchedItems] = useState<any[] | null>(null);
     const [marketsMapState, setMarketsMapState] = useState<Record<string, any>>({});
     const marketsRef = useRef<Record<string, any>>({});
+    const [decisionFilter, setDecisionFilter] = useState<'all' | 'yes' | 'no'>('all');
+
+    // Listen for external filter events (so header controls can live outside this component)
+    useEffect(() => {
+        const handler = (e: any) => {
+            try {
+                const val = e?.detail;
+                if (val === 'yes' || val === 'no' || val === 'all') setDecisionFilter(val);
+            } catch (err) { }
+        };
+        window.addEventListener('mira-decision-filter', handler as EventListener);
+        return () => window.removeEventListener('mira-decision-filter', handler as EventListener);
+    }, []);
     // Helper that looks up market entries either directly or under a 'markets' child
     const getMarketEntry = (k: any) => {
         try {
@@ -171,7 +184,16 @@ export default function PredictionBubbleCanvas({ items = [], onBubbleClick }: Pr
     }, []);
 
     const nodes = useMemo(() => {
-        const source = (fetchedItems || []);
+        // Apply decision filter (all / yes / no) before computing nodes
+        const raw = (fetchedItems || []);
+        const source = (decisionFilter === 'all') ? raw : raw.filter((d: any) => {
+            try {
+                const dec = getDecisionLabel(d);
+                if (decisionFilter === 'yes') return dec === 'YES';
+                if (decisionFilter === 'no') return dec === 'NO';
+                return true;
+            } catch (e) { return false; }
+        });
         const width = containerRef.current ? containerRef.current.clientWidth : window.innerWidth;
         const height = containerRef.current ? containerRef.current.clientHeight : window.innerHeight;
         const centerX = width / 2;
@@ -219,7 +241,7 @@ export default function PredictionBubbleCanvas({ items = [], onBubbleClick }: Pr
 
         nodesRef.current = next;
         return Object.values(next);
-    }, [fetchedItems]);
+    }, [fetchedItems, decisionFilter]);
 
     // Images are provided by Firebase markets; no external fallback fetches
 
@@ -233,12 +255,22 @@ export default function PredictionBubbleCanvas({ items = [], onBubbleClick }: Pr
         const centerX = width / 2;
         const centerY = height / 2;
 
-        const svg = d3.select(svgEl).attr("width", width).attr("height", height).attr("viewBox", `0 0 ${width} ${height}`);
+        const svg = d3.select(svgEl)
+            .attr("width", width)
+            .attr("height", height)
+            .attr("viewBox", `0 0 ${width} ${height}`)
+            .attr('overflow', 'visible');
 
         // Ensure filters for inner glow exist on the SVG defs
         const defs = svg.select('defs').empty() ? svg.append('defs') : svg.select('defs');
         if (defs.select('#innerGlowGreen').empty()) {
-            const f = defs.append('filter').attr('id', 'innerGlowGreen');
+            const f = defs.append('filter')
+                .attr('id', 'innerGlowGreen')
+                .attr('filterUnits', 'userSpaceOnUse')
+                .attr('x', '-50%')
+                .attr('y', '-50%')
+                .attr('width', '200%')
+                .attr('height', '200%');
             f.append('feGaussianBlur').attr('in', 'SourceAlpha').attr('stdDeviation', 8).attr('result', 'blur');
             f.append('feComposite').attr('in', 'blur').attr('in2', 'SourceAlpha').attr('operator', 'arithmetic').attr('k2', -1).attr('k3', 1).attr('result', 'innerGlow');
             f.append('feFlood').attr('flood-color', '#00ff41').attr('flood-opacity', 0.9).attr('result', 'color');
@@ -246,7 +278,13 @@ export default function PredictionBubbleCanvas({ items = [], onBubbleClick }: Pr
             f.append('feBlend').attr('in', 'SourceGraphic').attr('in2', 'coloredGlow').attr('mode', 'normal');
         }
         if (defs.select('#innerGlowRed').empty()) {
-            const f2 = defs.append('filter').attr('id', 'innerGlowRed');
+            const f2 = defs.append('filter')
+                .attr('id', 'innerGlowRed')
+                .attr('filterUnits', 'userSpaceOnUse')
+                .attr('x', '-50%')
+                .attr('y', '-50%')
+                .attr('width', '200%')
+                .attr('height', '200%');
             f2.append('feGaussianBlur').attr('in', 'SourceAlpha').attr('stdDeviation', 8).attr('result', 'blur');
             f2.append('feComposite').attr('in', 'blur').attr('in2', 'SourceAlpha').attr('operator', 'arithmetic').attr('k2', -1).attr('k3', 1).attr('result', 'innerGlow');
             f2.append('feFlood').attr('flood-color', '#ff0066').attr('flood-opacity', 0.9).attr('result', 'color');
@@ -255,7 +293,13 @@ export default function PredictionBubbleCanvas({ items = [], onBubbleClick }: Pr
         }
         // Outer glow filters (drop-shadow style) for bubbles
         if (defs.select('#bubbleGlowGreen').empty()) {
-            const g = defs.append('filter').attr('id', 'bubbleGlowGreen');
+            const g = defs.append('filter')
+                .attr('id', 'bubbleGlowGreen')
+                .attr('filterUnits', 'userSpaceOnUse')
+                .attr('x', '-50%')
+                .attr('y', '-50%')
+                .attr('width', '200%')
+                .attr('height', '200%');
             g.append('feGaussianBlur').attr('in', 'SourceAlpha').attr('stdDeviation', 10).attr('result', 'blurOuter');
             g.append('feFlood').attr('flood-color', '#00ff41').attr('flood-opacity', 0.85).attr('result', 'colorOuter');
             g.append('feComposite').attr('in', 'colorOuter').attr('in2', 'blurOuter').attr('operator', 'in').attr('result', 'coloredOuter');
@@ -270,7 +314,13 @@ export default function PredictionBubbleCanvas({ items = [], onBubbleClick }: Pr
             g.select('feMerge').append('feMergeNode').attr('in', 'SourceGraphic');
         }
         if (defs.select('#bubbleGlowRed').empty()) {
-            const g2 = defs.append('filter').attr('id', 'bubbleGlowRed');
+            const g2 = defs.append('filter')
+                .attr('id', 'bubbleGlowRed')
+                .attr('filterUnits', 'userSpaceOnUse')
+                .attr('x', '-50%')
+                .attr('y', '-50%')
+                .attr('width', '200%')
+                .attr('height', '200%');
             g2.append('feGaussianBlur').attr('in', 'SourceAlpha').attr('stdDeviation', 10).attr('result', 'blurOuter');
             g2.append('feFlood').attr('flood-color', '#ff0066').attr('flood-opacity', 0.85).attr('result', 'colorOuter');
             g2.append('feComposite').attr('in', 'colorOuter').attr('in2', 'blurOuter').attr('operator', 'in').attr('result', 'coloredOuter');
@@ -334,10 +384,10 @@ export default function PredictionBubbleCanvas({ items = [], onBubbleClick }: Pr
         enter.append('circle')
             .attr('class', (d: any) => 'bubble ' + ((d.decision === 'YES') ? 'positive' : (d.decision === 'NO' ? 'negative' : (((d.change ?? 0) >= 0) ? 'positive' : 'negative'))))
             .attr('r', (d: any) => d.r);
-        // Three-line label: title, YES/NO, $amount (we position using absolute y later)
-        enter.append('text').attr('class', 'title').text((d: any) => getTitleLabel(d));
+        // Three-line label: decision (YES/NO) above, amount ($) in the middle, title last below
         enter.append('text').attr('class', 'decision').text((d: any) => getDecisionLabel(d));
         enter.append('text').attr('class', 'amount').text((d: any) => getAmountLabel(d));
+        enter.append('text').attr('class', 'title').text((d: any) => getTitleLabel(d));
 
         const merged = enter.merge(sel as any);
 
@@ -482,17 +532,11 @@ export default function PredictionBubbleCanvas({ items = [], onBubbleClick }: Pr
             applyPattern(img || null);
         });
 
-        // Update text content on enter+update and color/size decision text by YES/NO, size relative to bubble radius
-        merged.select('text.title')
-            .text((d: any) => getTitleLabel(d))
-            .attr('y', (d: any) => -Math.round((d.r || 24) * 0.25))
-            .attr('font-size', (d: any) => Math.max(8, Math.round((d.r || 24) * 0.24)))
-            .attr('fill', '#ffffff')
-            .attr('font-weight', '800');
-
+        // Update text content on enter+update: put decision where the title used to be,
+        // then amount below. Decision is colored green for YES and red for NO.
         merged.select('text.decision')
             .text((d: any) => getDecisionLabel(d))
-            .attr('y', (d: any) => Math.round((d.r || 24) * -0.04))
+            .attr('y', (d: any) => -Math.round((d.r || 24) * 0.18))
             .attr('font-size', (d: any) => Math.max(12, Math.round((d.r || 24) * 0.48)))
             .attr('fill', (d: any) => {
                 const dec = getDecisionLabel(d);
@@ -507,8 +551,17 @@ export default function PredictionBubbleCanvas({ items = [], onBubbleClick }: Pr
 
         merged.select('text.amount')
             .text((d: any) => getAmountLabel(d))
-            .attr('y', (d: any) => Math.round((d.r || 24) * 0.32))
-            .attr('font-size', (d: any) => Math.max(9, Math.round((d.r || 24) * 0.26)))
+            .attr('y', (d: any) => Math.round((d.r || 24) * 0.12))
+            // Increased multiplier and min size for better readability
+            .attr('font-size', (d: any) => Math.max(12, Math.round((d.r || 24) * 0.38)))
+            .attr('fill', '#ffffff')
+            .attr('font-weight', '800');
+
+        // Title displayed below the amount — single-line truncated to 10 chars
+        merged.select('text.title')
+            .text((d: any) => getTitleLabel(d))
+            .attr('y', (d: any) => Math.round((d.r || 24) * 0.38))
+            .attr('font-size', (d: any) => Math.max(8, Math.round((d.r || 24) * 0.18)))
             .attr('fill', '#ffffff')
             .attr('font-weight', '800');
 
@@ -620,9 +673,11 @@ export default function PredictionBubbleCanvas({ items = [], onBubbleClick }: Pr
 
     return (
         <div ref={containerRef} style={{ width: "100%", height: "100%", position: "absolute", inset: 0, background: "#000" }}>
-            <style>{`\n                .bubble { cursor:grab; stroke-width:3; transition:all .25s; }\n                .bubble:hover { stroke:white !important; stroke-width:5 !important; }\n                .bubble.positive { stroke:#00ff41; fill:#001a08; }\n                .bubble.negative { stroke:#ff0066; fill:#1a0008; }\n                .symbol { font-weight:900; font-size:14px; fill:white; text-anchor:middle; dominant-baseline:middle; pointer-events:none; }\n                .pct { font-size:12px; fill:white; text-anchor:middle; dominant-baseline:middle; pointer-events:none; }\n                .title { font-weight:800; font-size:12px; fill:white; text-anchor:middle; dominant-baseline:middle; pointer-events:none; }\n                .decision { font-size:16px; fill:white; text-anchor:middle; dominant-baseline:middle; pointer-events:none; font-weight:900; }\n                .amount { font-size:14px; fill:#fff; text-anchor:middle; dominant-baseline:middle; pointer-events:none; font-weight:800; }\n            `}</style>
+            <style>{`\n                .bubble { cursor:grab; stroke-width:3; transition:all .25s; }\n                .bubble:hover { stroke:white !important; stroke-width:5 !important; }\n                .bubble.positive { stroke:#00ff41; fill:#001a08; }\n                .bubble.negative { stroke:#ff0066; fill:#1a0008; }\n                .symbol { font-weight:900; font-size:14px; fill:white; text-anchor:middle; dominant-baseline:middle; pointer-events:none; }\n                .pct { font-size:12px; fill:white; text-anchor:middle; dominant-baseline:middle; pointer-events:none; }\n                .title { font-weight:800; font-size:12px; fill:white; text-anchor:middle; dominant-baseline:middle; pointer-events:none; }\n                .decision { font-size:16px; text-anchor:middle; dominant-baseline:middle; pointer-events:none; font-weight:900; }\n                .amount { fill:#fff; text-anchor:middle; dominant-baseline:middle; pointer-events:none; font-weight:800; }\n            `}</style>
 
-            <div style={{ position: "absolute", top: 16, left: 20, fontSize: 20, fontWeight: 800, color: "#fff", zIndex: 10 }}>BUBBLE MAP</div>
+            <div style={{ position: "absolute", top: 12, left: 16, zIndex: 10, display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ color: '#fff', fontSize: 18, fontWeight: 800, marginRight: 8 }}>BUBBLE MAP</div>
+            </div>
             <svg ref={svgRef} style={{ width: "100%", height: "100%" }} />
         </div>
     );
@@ -636,8 +691,8 @@ function radiusShiftSafe(r: number) {
 function getTitleLabel(d: any) {
     const title = d.market || d.question || d.symbol || d.id || "?";
     const s = String(title).trim();
-    // Show up to 5 characters, add ellipsis when longer
-    const max = 5;
+    // Show up to 10 characters, add ellipsis when longer
+    const max = 10;
     if (s.length <= max) return s;
     return s.slice(0, max) + '…';
 }

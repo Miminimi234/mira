@@ -10,7 +10,7 @@ import { SystemStatusBar } from "@/components/SystemStatusBar";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Waitlist } from "@/components/Waitlist";
 import { Watchlist } from "@/components/Watchlist";
-import { listenToAgentPredictions, listenToPredictions } from '@/lib/firebase/listeners';
+import { listenToAgentPredictions, listenToMarkets, listenToPredictions } from '@/lib/firebase/listeners';
 import { getCustodialWallet, getOrCreateWallet, storeCustodialWallet } from "@/lib/wallet";
 import { getWatchlist, removeFromWatchlist } from "@/lib/watchlist";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -776,6 +776,129 @@ const Index = () => {
     }
   };
 
+  // Global listener so other parts of the app can open market details (e.g. summary cards)
+  useEffect(() => {
+    const handler = async (e: any) => {
+      try {
+        const marketId = e?.detail?.marketId;
+        const marketName = e?.detail?.marketName;
+        if (!marketId && !marketName) return;
+
+        // Try to find in main predictions list first
+        let matchingPrediction = predictions.find(p => p.id === marketId || (p as any).predictionId === marketId || p.marketSlug === marketId || String(p.id) === String(marketId));
+
+        // If not found, try to find in summaryDecisions (incoming agent decisions)
+        if (!matchingPrediction && summaryDecisions && summaryDecisions.length > 0) {
+          const sd = summaryDecisions.find((s: any) => String(s.marketId) === String(marketId) || String(s.id) === String(marketId) || (marketName && String(s.market || s.marketQuestion || s.marketName || '').toLowerCase().includes(String(marketName).toLowerCase())));
+          if (sd) {
+            // Create a minimal PredictionNodeData from the summary decision so the MarketDetailsPanel can render
+            const constructed: PredictionNodeData = {
+              id: sd.marketId || sd.id || String(marketId),
+              question: sd.market || sd.marketQuestion || sd.marketName || sd.market || 'Unknown Market',
+              probability: (typeof sd.confidence === 'number' && isFinite(sd.confidence)) ? sd.confidence : (sd.confidence ? Number(sd.confidence) : 0),
+              position: (sd.decision === 'YES') ? 'YES' : 'NO',
+              price: (typeof sd.confidence === 'number' && isFinite(sd.confidence)) ? sd.confidence : (sd.confidence ? Number(sd.confidence) : 0),
+              change: sd.change ?? 0,
+              agentName: sd.agentName || '',
+              agentEmoji: sd.agentEmoji || '',
+              reasoning: sd.reasoning || sd.fullReasoning?.join(' ') || '',
+              category: sd.category || undefined,
+              marketSlug: sd.marketSlug || undefined,
+              conditionId: sd.conditionId || undefined,
+              imageUrl: sd.imageUrl || undefined,
+              createdAt: sd.createdAt || undefined,
+              endDate: sd.endDate || undefined,
+              startDate: sd.startDate || undefined,
+              volume: sd.investmentUsd || sd.volume || 0,
+              liquidity: sd.liquidity || 0,
+              predicted: true,
+            } as PredictionNodeData;
+            matchingPrediction = constructed as any;
+          }
+        }
+
+        // If still not found, try to query the canonical markets map (RTDB) so we can construct a proper prediction
+        if (!matchingPrediction) {
+          try {
+            const marketsMap: Record<string, any> = await new Promise((resolve) => {
+              try {
+                const unsub = listenToMarkets((m: any) => {
+                  try { if (unsub) unsub(); } catch (e) { }
+                  resolve(m || {});
+                });
+                // Safety timeout in case listener doesn't call back
+                setTimeout(() => resolve({}), 500);
+              } catch (e) { resolve({}); }
+            });
+
+            // Search marketsMap by several keys
+            const entries = Object.entries(marketsMap || {});
+            const found = entries.find(([k, v]: any) => {
+              const maybe = v as any;
+              if (!maybe) return false;
+              const idMatches = String(k) === String(marketId) || String(maybe.id) === String(marketId);
+              const slugMatches = maybe.slug && String(maybe.slug) === String(marketId);
+              const condMatches = maybe.conditionId && String(maybe.conditionId) === String(marketId);
+              return idMatches || slugMatches || condMatches;
+            });
+
+            if (found) {
+              const val = found[1] as any;
+              const constructedFromMarket: PredictionNodeData = {
+                id: String(val.id || found[0] || marketId),
+                question: val.question || val.title || val.market || val.marketQuestion || String(marketName) || 'Unknown Market',
+                probability: (typeof val.yes_price === 'number' ? Math.round(val.yes_price * 100) : (typeof val.probability === 'number' ? val.probability : 0)),
+                position: (val.yes_price && val.yes_price >= 0.5) ? 'YES' : 'NO',
+                price: typeof val.yes_price === 'number' ? Math.round(val.yes_price * 100) : (typeof val.probability === 'number' ? val.probability : 0),
+                change: val.change ?? 0,
+                agentName: val.agentName || '',
+                agentEmoji: val.agentEmoji || '',
+                reasoning: val.reasoning || val.description || '',
+                category: val.category || val.tags || undefined,
+                marketSlug: val.slug || val.marketSlug || undefined,
+                conditionId: val.conditionId || undefined,
+                imageUrl: val.image || val.imageUrl || val.thumb || undefined,
+                createdAt: val.createdAt || val.created_at || undefined,
+                endDate: val.endDate || val.end_date || val.ends_at || undefined,
+                startDate: val.startDate || val.start_date || val.starts_at || undefined,
+                volume: val.volume ?? 0,
+                liquidity: val.liquidity ?? 0,
+                predicted: true,
+              } as PredictionNodeData;
+              matchingPrediction = constructedFromMarket as any;
+            }
+          } catch (e) {
+            // ignore
+          }
+        }
+
+        if (matchingPrediction) {
+          setSelectedPrediction(matchingPrediction as PredictionNodeData);
+          setSelectedNode((matchingPrediction as any).id || String(marketId));
+          if (!isPerformanceOpen) {
+            performancePanelAutoOpenedRef.current = true;
+            setIsPerformanceOpen(true);
+            setLeftPanelSize(30);
+            setSavedLeftPanelSize(30);
+            localStorage.setItem('savedLeftPanelSize', '30');
+          }
+        } else {
+          console.warn('[mira-open-market] prediction not found for id/name:', marketId, marketName);
+        }
+      } catch (err) {
+        console.warn('[mira-open-market] handler error', err);
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('mira-open-market', handler as EventListener);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('mira-open-market', handler as EventListener);
+      }
+    };
+  }, [predictions, summaryDecisions, isPerformanceOpen]);
+
   // Pan/zoom handlers removed - bubbles now fill full screen and can only be dragged individually
 
   const marketCategories = [
@@ -1210,7 +1333,23 @@ const Index = () => {
                   {loadingMarkets && <span className="ml-2 text-[10px] text-muted-foreground">(Loading markets...)</span>}
                 </span>
                 <div className="flex items-center gap-3">
-                  {/* Decision tabs removed */}
+                  {/* Dashboard decision filter controls */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('mira-decision-filter', { detail: 'all' })); }}
+                      className="px-2 py-1 text-[11px] font-bold rounded bg-[rgba(255,255,255,0.03)] text-muted-foreground border border-[rgba(255,255,255,0.06)]"
+                    >All</button>
+                    <button
+                      onClick={() => { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('mira-decision-filter', { detail: 'yes' })); }}
+                      className="px-2 py-1 text-[11px] font-bold rounded border"
+                      style={{ backgroundColor: 'rgba(0,255,65,0.06)', color: '#00ff41', borderColor: 'rgba(0,255,65,0.12)' }}
+                    >YES</button>
+                    <button
+                      onClick={() => { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('mira-decision-filter', { detail: 'no' })); }}
+                      className="px-2 py-1 text-[11px] font-bold rounded border"
+                      style={{ backgroundColor: 'rgba(255,0,102,0.06)', color: '#ff0066', borderColor: 'rgba(255,0,102,0.12)' }}
+                    >NO</button>
+                  </div>
 
                   {/* Filters removed per request - replaced markets dropdown above with Yes/No tabs */}
 
