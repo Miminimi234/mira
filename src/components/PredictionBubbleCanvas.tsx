@@ -199,17 +199,16 @@ export default function PredictionBubbleCanvas({ items = [], onBubbleClick }: Pr
         const centerX = width / 2;
         const centerY = height / 2;
         // Compute a dynamic radius scale based primarily on bet amounts (investmentUsd)
-        // Prefer using the largest bet to size bubbles proportionally; fall back to 100 as a sensible max.
+        // Prefer using the largest bet to size bubbles proportionally.
         const betValues = (source || []).map((s: any) => Number(s.investmentUsd || s.bet_amount || 0)).filter((n: number) => !isNaN(n) && n >= 0);
         const observedMaxBet = betValues.length ? Math.max(...betValues) : 0;
-        // Cap the display domain so very large bets don't dominate the visualization.
-        // Use a smaller display max to reduce average bubble sizes.
-        const DISPLAY_MAX_BET = 10;
-        const displayMax = Math.max(6, Math.min(observedMaxBet || 0, DISPLAY_MAX_BET));
-        // Use a power scale with a small exponent to compress the ratio between
-        // smallest and largest bets (smaller exponent -> more compression).
-        // Clamp to keep values inside domain.
-        const radiusScale = d3.scalePow().exponent(0.3).domain([0, displayMax]).range([12, 56]).clamp(true as any);
+        // Allow the display max to scale with observed bets so larger bets have visibly larger bubbles,
+        // while preventing extreme outliers from creating unmanageably large circles.
+        // Cap display max to avoid extremely large circles for moderate bets (e.g. $100)
+        const DISPLAY_MAX_BET = Math.max(10, Math.min(observedMaxBet || 0, 50));
+        const displayMax = Math.max(6, DISPLAY_MAX_BET);
+        // Use a moderate exponent and a controlled output range so $100 bubbles are noticeable but not dominating.
+        const radiusScale = d3.scalePow().exponent(0.45).domain([0, displayMax]).range([12, 80]).clamp(true as any);
 
         const next: Record<string, any> = {};
         (source || []).forEach((d: any) => {
