@@ -84,6 +84,11 @@ interface AISummaryPanelProps {
   onTradeClick?: (marketId: string) => void;
   onDecisionsUpdate?: (decisions: AIDecision[]) => void;
   selectedAgentFilter?: string | null;
+  // Optional global search string coming from parent (dashboard header).
+  // When provided, the summary panel will filter displayed decisions by market title.
+  globalSearch?: string;
+  // Optional top-level decision filter: 'all' | 'yes' | 'no'
+  decisionFilter?: 'all' | 'yes' | 'no';
 }
 
 const mockDecisions: AIDecision[] = [
@@ -320,7 +325,7 @@ const formatTimeAgo = (date: Date) => {
   return `${hours}h ago`;
 };
 
-export const AISummaryPanel = ({ onTradeClick, onDecisionsUpdate, selectedAgentFilter: selectedAgentProp }: AISummaryPanelProps = {}) => {
+export const AISummaryPanel = ({ onTradeClick, onDecisionsUpdate, selectedAgentFilter: selectedAgentProp, globalSearch, decisionFilter = 'all' }: AISummaryPanelProps = {}) => {
   const [decisions, setDecisions] = useState<AIDecision[]>([]);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [marketsMap, setMarketsMap] = useState<Record<string, any>>({});
@@ -671,7 +676,8 @@ export const AISummaryPanel = ({ onTradeClick, onDecisionsUpdate, selectedAgentF
     setExpandedId(expandedId === id ? null : id);
   };
 
-  const filteredDecisions = selectedAgentFilter
+  // Apply agent filter first (if present)
+  let baseDecisions = selectedAgentFilter
     ? decisions.filter(d => {
       const normalizeForCompare = (s: any) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
       const selectedNorm = normalizeForCompare(selectedAgentFilter);
@@ -682,7 +688,29 @@ export const AISummaryPanel = ({ onTradeClick, onDecisionsUpdate, selectedAgentF
       // also check raw agentName with spaces (fallback)
       return String(d.agentName || '').toLowerCase().includes(String(selectedAgentFilter).toLowerCase());
     })
-    : decisions;
+    : decisions.slice();
+
+  // Apply top-level decision filter (yes/no/all)
+  if (decisionFilter === 'yes' || decisionFilter === 'no') {
+    const want = decisionFilter === 'yes' ? 'YES' : 'NO';
+    baseDecisions = baseDecisions.filter(d => {
+      // Normalize decision from multiple possible fields to avoid mismatches
+      const fromTop = (d.decision || d.raw?.decision || d.raw?.side || (d.decisionHistory && d.decisionHistory[0]?.decision) || '').toString().toUpperCase();
+      return fromTop === want;
+    });
+    try {
+      // Debug: log how many decisions passed the filter (helps diagnose UX mismatch)
+      console.debug('[AISummaryPanel] decisionFilter=', decisionFilter, 'initialCount=', decisions.length, 'afterAgentFilter=', baseDecisions.length);
+    } catch (e) { }
+  }
+
+  // Apply global header search (title-only) when provided by parent
+  const filteredDecisions = baseDecisions.filter(d => {
+    if (!globalSearch || !String(globalSearch).trim()) return true;
+    const q = String(globalSearch).trim().toLowerCase();
+    const title = String(d.market || '').toLowerCase();
+    return title.includes(q);
+  });
   const selectedAgentMeta = selectedAgentFilter
     ? agents.find(agent => agent.id === selectedAgentFilter)
     : null;

@@ -7,12 +7,14 @@ import { PerformanceChart } from "@/components/PerformanceChart";
 import PredictionBubbleCanvas from "@/components/PredictionBubbleCanvas";
 import { PredictionNodeData } from "@/components/PredictionTypes";
 import { SystemStatusBar } from "@/components/SystemStatusBar";
+import { Input } from '@/components/ui/input';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Waitlist } from "@/components/Waitlist";
 import { Watchlist } from "@/components/Watchlist";
 import { listenToAgentPredictions, listenToMarkets, listenToPredictions } from '@/lib/firebase/listeners';
 import { getCustodialWallet, getOrCreateWallet, storeCustodialWallet } from "@/lib/wallet";
 import { getWatchlist, removeFromWatchlist } from "@/lib/watchlist";
+import { Search } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from "react";
 // All market fetching is now done server-side via /api/predictions
 
@@ -203,6 +205,7 @@ const Index = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>("All Markets");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState<string>("");
+  const [decisionFilter, setDecisionFilter] = useState<'all' | 'yes' | 'no'>('all');
   const [predictions, setPredictions] = useState<PredictionNodeData[]>(() => {
     // Load from cache immediately for instant display
     try {
@@ -255,7 +258,7 @@ const Index = () => {
   }, [searchQuery]);
 
   // Filter state
-  const [filters, setFilters] = useState({
+  const DEFAULT_FILTERS = {
     minVolume: '',
     maxVolume: '',
     minLiquidity: '',
@@ -266,7 +269,9 @@ const Index = () => {
     maxProbability: '',
     sortBy: 'volume' as 'volume' | 'liquidity' | 'price' | 'probability' | 'none',
     sortOrder: 'desc' as 'asc' | 'desc',
-  });
+  } as const;
+
+  const [filters, setFilters] = useState(() => ({ ...DEFAULT_FILTERS }));
   const [showWaitlist, setShowWaitlist] = useState(false);
   const [showWatchlist, setShowWatchlist] = useState(false);
   const [showAgentTrades, setShowAgentTrades] = useState(false);
@@ -1001,27 +1006,12 @@ const Index = () => {
   const filteredPredictions = useMemo(() => {
     let filtered = predictions;
 
-    // Apply search query filter - search across multiple fields (use debounced query)
+    // Apply search query filter: match only against the visible bubble title (prediction.question)
     if (debouncedSearchQuery.trim()) {
-      const query = debouncedSearchQuery.toLowerCase();
-      const queryWords = query.split(/\s+/).filter(w => w.length > 0); // Split into words for better matching
-
+      const q = debouncedSearchQuery.trim().toLowerCase();
       filtered = filtered.filter(prediction => {
-        const question = (prediction.question || '').toLowerCase();
-        const category = (prediction.category || '').toLowerCase();
-        const agentName = (prediction.agentName || '').toLowerCase();
-        const id = (prediction.id || '').toLowerCase();
-        const marketSlug = (prediction.marketSlug || '').toLowerCase();
-
-        // Check if all query words appear in any field (AND logic for multi-word searches)
-        // For single word, match if it appears in any field
-        return queryWords.every(word =>
-          question.includes(word) ||
-          category.includes(word) ||
-          agentName.includes(word) ||
-          id.includes(word) ||
-          marketSlug.includes(word)
-        );
+        const title = (prediction.question || '').toLowerCase();
+        return title.includes(q);
       });
     }
 
@@ -1140,14 +1130,46 @@ const Index = () => {
     return filteredPredictions;
   }, [filteredPredictions, bubbleLimit]);
 
-  // Signature used to force remount of the bubble field when predictions set changes
+  // If `summaryDecisions` is present we previously bypassed the header search;
+  // compute a `displayPredictions` that applies the same title-only search to
+  // summary decisions so the search input consistently filters the visible bubbles.
+  const displayPredictions = useMemo(() => {
+    try {
+      let source: any[] = (summaryDecisions && summaryDecisions.length > 0) ? summaryDecisions.slice() : limitedPredictions.slice();
+
+      // Apply top-level decision filter (yes/no/all) so bubbles mirror the summary panel
+      if (decisionFilter && decisionFilter !== 'all') {
+        const want = decisionFilter === 'yes' ? 'YES' : 'NO';
+        source = source.filter((p: any) => {
+          try {
+            const candidate = (p.position || p.decision || p.raw?.decision || p.raw?.side || (typeof p.price === 'number' ? (p.price >= 50 ? 'YES' : 'NO') : undefined) || (typeof p.probability === 'number' ? (p.probability >= 50 ? 'YES' : 'NO') : undefined) || '').toString().toUpperCase();
+            return candidate === want;
+          } catch (e) { return false; }
+        });
+      }
+
+      if (!debouncedSearchQuery.trim()) return source;
+      const q = debouncedSearchQuery.trim().toLowerCase();
+      return (source || []).filter((p: any) => {
+        const title = String(p.question || p.marketQuestion || p.market || p.title || '').toLowerCase();
+        return title.includes(q);
+      });
+    } catch (e) {
+      // If anything goes wrong while filtering for search, return empty results
+      // to avoid accidentally showing the unfiltered set when the user expected no matches.
+      console.debug('[Index] displayPredictions filter error', e);
+      return [];
+    }
+  }, [summaryDecisions, limitedPredictions, debouncedSearchQuery, decisionFilter]);
+
+  // Signature used to force remount of the bubble field when the displayed predictions change
   const predictionsSignature = useMemo(() => {
     try {
-      return limitedPredictions.map(p => (p.id || '')).join('|');
+      return displayPredictions.map((p: any) => (p.id || '')).join('|');
     } catch (e) {
-      return String(limitedPredictions.length);
+      return String((displayPredictions || []).length);
     }
-  }, [limitedPredictions]);
+  }, [displayPredictions]);
 
 
   // Get custodial wallet from localStorage when logged in
@@ -1416,16 +1438,16 @@ const Index = () => {
                   {/* Dashboard decision filter controls */}
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('mira-decision-filter', { detail: 'all' })); }}
+                      onClick={() => { setDecisionFilter('all'); if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('mira-decision-filter', { detail: 'all' })); }}
                       className="px-2 py-1 text-[11px] font-bold rounded bg-[rgba(255,255,255,0.03)] text-muted-foreground border border-[rgba(255,255,255,0.06)]"
                     >All</button>
                     <button
-                      onClick={() => { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('mira-decision-filter', { detail: 'yes' })); }}
+                      onClick={() => { setDecisionFilter('yes'); if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('mira-decision-filter', { detail: 'yes' })); }}
                       className="px-2 py-1 text-[11px] font-bold rounded border"
                       style={{ backgroundColor: 'rgba(0,255,65,0.06)', color: '#00ff41', borderColor: 'rgba(0,255,65,0.12)' }}
                     >YES</button>
                     <button
-                      onClick={() => { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('mira-decision-filter', { detail: 'no' })); }}
+                      onClick={() => { setDecisionFilter('no'); if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('mira-decision-filter', { detail: 'no' })); }}
                       className="px-2 py-1 text-[11px] font-bold rounded border"
                       style={{ backgroundColor: 'rgba(255,0,102,0.06)', color: '#ff0066', borderColor: 'rgba(255,0,102,0.12)' }}
                     >NO</button>
@@ -1433,19 +1455,36 @@ const Index = () => {
 
                   {/* Filters removed per request - replaced markets dropdown above with Yes/No tabs */}
 
-                  {/* Search Bar (commented out) */}
-                  {/*
-                    <div className="relative max-w-xs w-64">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                      <Input
-                        type="text"
-                        placeholder="Search markets..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="h-8 pl-9 pr-3 text-xs bg-background border-border focus:border-terminal-accent transition-colors rounded-full"
-                      />
-                    </div>
-                  */}
+                  {/* Search Bar - filters & search in dashboard header */}
+                  <div className="relative max-w-xs w-64">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                    <Input
+                      type="text"
+                      aria-label="Search markets"
+                      placeholder="Search markets..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="h-8 pl-9 pr-10 text-xs bg-background border-border focus:border-terminal-accent transition-colors rounded-full"
+                    />
+                    {/* Clear button appears when any top-level filter is active */}
+                    {(decisionFilter !== 'all' || selectedAgent !== null || (searchQuery && searchQuery.trim() !== '') || JSON.stringify(filters) !== JSON.stringify(DEFAULT_FILTERS)) && (
+                      <button
+                        onClick={() => {
+                          // Reset top-level filters and search
+                          setDecisionFilter('all');
+                          setSelectedAgent(null);
+                          setSearchQuery('');
+                          setDebouncedSearchQuery('');
+                          setFilters({ ...DEFAULT_FILTERS });
+                        }}
+                        className="absolute right-10 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground bg-[rgba(255,255,255,0.02)] px-2 py-0.5 rounded hover:bg-[rgba(255,255,255,0.04)]"
+                      >
+                        Clear
+                      </button>
+                    )}
+
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground bg-[rgba(255,255,255,0.02)] px-2 py-0.5 rounded">{(displayPredictions || []).length}/{predictions.length}</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1494,7 +1533,7 @@ const Index = () => {
               >
                 <PredictionBubbleCanvas
                   key={predictionsSignature}
-                  items={(summaryDecisions && summaryDecisions.length > 0) ? summaryDecisions : limitedPredictions}
+                  items={displayPredictions}
                   onBubbleClick={(market) => handleBubbleClick(market)}
                 />
               </div>
@@ -1671,6 +1710,8 @@ const Index = () => {
                   <div className="h-full">
                     <AISummaryPanel
                       selectedAgentFilter={selectedAgent || undefined}
+                      globalSearch={debouncedSearchQuery}
+                      decisionFilter={decisionFilter}
                       onTradeClick={(marketId) => {
                         // Find the prediction by marketId and open it
                         const matchingPrediction = predictions.find(p => p.id === marketId);

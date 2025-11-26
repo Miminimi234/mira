@@ -51,10 +51,52 @@ export default function PredictionBubbleCanvas({ items = [], onBubbleClick }: Pr
             return null;
         } catch (e) { return null; }
     };
-    const IMAGE_OVERLAY_OPACITY = 0.45; // Dark overlay opacity (0 = no overlay, 1 = fully black)
+    // Dark overlay opacity applied on top of images inside bubbles. Lower value
+    // makes images brighter/less obscured behind the frosted overlay.
+    const IMAGE_OVERLAY_OPACITY = 0.22; // reduced from 0.45 for clearer visuals
 
     // Subscribe to Firebase `predictions` and show only agent predictions.
+    // If a `items` prop is provided (e.g. Landing page API fetch), prefer that
+    // and skip the realtime subscription so the background can render.
     useEffect(() => {
+        // If a parent provided an `items` prop (even an empty array), prefer it
+        // and skip the realtime subscription. This ensures search that yields
+        // zero results doesn't fall back to showing the live RTDB set.
+        if (Array.isArray(items)) {
+            try {
+                // Map incoming prop items to the internal node shape (lightweight mapping)
+                const mapped = (items || []).map((p: any) => {
+                    const imageUrl = p.image_url || p.imageUrl || p.market_image || p.market_image_url || p.marketImage || p.image || p.thumb || p.logo || null;
+                    const rawMarketTitle = p.marketQuestion || p.market_question || p.title || p.question || p.market || '';
+                    const decision = p.decision || p.side || p.position || (typeof p.probability === 'number' ? (p.probability >= 50 ? 'YES' : 'NO') : null);
+                    const amount = (p.bet_amount != null) ? p.bet_amount : (p.betAmount != null ? p.betAmount : (p.investmentUsd || p.investment || p.amount || p.invested || p.volume || 0));
+                    return {
+                        id: p.id || p.predictionId || p._id || JSON.stringify(p),
+                        market: rawMarketTitle,
+                        imageUrl,
+                        volume: Number(p.volume || 0),
+                        marketId: p.marketId || p.market_id || p.market || null,
+                        probability: p.probability ?? null,
+                        decision,
+                        investmentUsd: amount,
+                        agentId: p.agentId || p.agent || null,
+                        agentName: p.agentName || p.agent || null,
+                        raw: p,
+                        change: p.change ?? 0,
+                    };
+                });
+                mapped.sort((a: any, b: any) => {
+                    const ta = a.raw?.createdAt ? new Date(a.raw.createdAt).getTime() : 0;
+                    const tb = b.raw?.createdAt ? new Date(b.raw.createdAt).getTime() : 0;
+                    return tb - ta;
+                });
+                setFetchedItems(mapped.slice(0, 100) as any[]);
+            } catch (err) {
+                setFetchedItems([]);
+            }
+            return;
+        }
+
         let unsub: (() => void) | null = null;
         try {
             unsub = listenToAgentPredictions((items) => {
@@ -270,7 +312,8 @@ export default function PredictionBubbleCanvas({ items = [], onBubbleClick }: Pr
                 .attr('y', '-50%')
                 .attr('width', '200%')
                 .attr('height', '200%');
-            f.append('feGaussianBlur').attr('in', 'SourceAlpha').attr('stdDeviation', 8).attr('result', 'blur');
+            // Reduce inner glow blur so halos are tighter and less fuzzy
+            f.append('feGaussianBlur').attr('in', 'SourceAlpha').attr('stdDeviation', 4).attr('result', 'blur');
             f.append('feComposite').attr('in', 'blur').attr('in2', 'SourceAlpha').attr('operator', 'arithmetic').attr('k2', -1).attr('k3', 1).attr('result', 'innerGlow');
             f.append('feFlood').attr('flood-color', '#00ff41').attr('flood-opacity', 0.9).attr('result', 'color');
             f.append('feComposite').attr('in', 'color').attr('in2', 'innerGlow').attr('operator', 'in').attr('result', 'coloredGlow');
@@ -284,7 +327,7 @@ export default function PredictionBubbleCanvas({ items = [], onBubbleClick }: Pr
                 .attr('y', '-50%')
                 .attr('width', '200%')
                 .attr('height', '200%');
-            f2.append('feGaussianBlur').attr('in', 'SourceAlpha').attr('stdDeviation', 8).attr('result', 'blur');
+            f2.append('feGaussianBlur').attr('in', 'SourceAlpha').attr('stdDeviation', 4).attr('result', 'blur');
             f2.append('feComposite').attr('in', 'blur').attr('in2', 'SourceAlpha').attr('operator', 'arithmetic').attr('k2', -1).attr('k3', 1).attr('result', 'innerGlow');
             f2.append('feFlood').attr('flood-color', '#ff0066').attr('flood-opacity', 0.9).attr('result', 'color');
             f2.append('feComposite').attr('in', 'color').attr('in2', 'innerGlow').attr('operator', 'in').attr('result', 'coloredGlow');
@@ -299,11 +342,12 @@ export default function PredictionBubbleCanvas({ items = [], onBubbleClick }: Pr
                 .attr('y', '-50%')
                 .attr('width', '200%')
                 .attr('height', '200%');
-            g.append('feGaussianBlur').attr('in', 'SourceAlpha').attr('stdDeviation', 10).attr('result', 'blurOuter');
+            // Reduce outer glow blur so glows are smaller and less fuzzy
+            g.append('feGaussianBlur').attr('in', 'SourceAlpha').attr('stdDeviation', 6).attr('result', 'blurOuter');
             g.append('feFlood').attr('flood-color', '#00ff41').attr('flood-opacity', 0.85).attr('result', 'colorOuter');
             g.append('feComposite').attr('in', 'colorOuter').attr('in2', 'blurOuter').attr('operator', 'in').attr('result', 'coloredOuter');
             // small inner glow to blend nicely
-            g.append('feGaussianBlur').attr('in', 'SourceAlpha').attr('stdDeviation', 4).attr('result', 'blurInner');
+            g.append('feGaussianBlur').attr('in', 'SourceAlpha').attr('stdDeviation', 2).attr('result', 'blurInner');
             g.append('feComposite').attr('in', 'blurInner').attr('in2', 'SourceAlpha').attr('operator', 'arithmetic').attr('k2', -1).attr('k3', 1).attr('result', 'innerGlow');
             g.append('feFlood').attr('flood-color', '#00ff41').attr('flood-opacity', 1.0).attr('result', 'colorInner');
             g.append('feComposite').attr('in', 'colorInner').attr('in2', 'innerGlow').attr('operator', 'in').attr('result', 'coloredInner');
@@ -320,10 +364,10 @@ export default function PredictionBubbleCanvas({ items = [], onBubbleClick }: Pr
                 .attr('y', '-50%')
                 .attr('width', '200%')
                 .attr('height', '200%');
-            g2.append('feGaussianBlur').attr('in', 'SourceAlpha').attr('stdDeviation', 10).attr('result', 'blurOuter');
+            g2.append('feGaussianBlur').attr('in', 'SourceAlpha').attr('stdDeviation', 6).attr('result', 'blurOuter');
             g2.append('feFlood').attr('flood-color', '#ff0066').attr('flood-opacity', 0.85).attr('result', 'colorOuter');
             g2.append('feComposite').attr('in', 'colorOuter').attr('in2', 'blurOuter').attr('operator', 'in').attr('result', 'coloredOuter');
-            g2.append('feGaussianBlur').attr('in', 'SourceAlpha').attr('stdDeviation', 4).attr('result', 'blurInner');
+            g2.append('feGaussianBlur').attr('in', 'SourceAlpha').attr('stdDeviation', 2).attr('result', 'blurInner');
             g2.append('feComposite').attr('in', 'blurInner').attr('in2', 'SourceAlpha').attr('operator', 'arithmetic').attr('k2', -1).attr('k3', 1).attr('result', 'innerGlow');
             g2.append('feFlood').attr('flood-color', '#ff0066').attr('flood-opacity', 1.0).attr('result', 'colorInner');
             g2.append('feComposite').attr('in', 'colorInner').attr('in2', 'innerGlow').attr('operator', 'in').attr('result', 'coloredInner');

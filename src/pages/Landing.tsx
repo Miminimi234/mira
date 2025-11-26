@@ -29,8 +29,33 @@ const Landing = () => {
     } catch (e) {
       // Ignore cache errors
     }
+    // Development helper: allow forcing demo bubbles via URL ?simulate_bubbles=1
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('simulate_bubbles') === '1') {
+        return [
+          { id: 'mock-1', marketQuestion: 'Will BTC > 80k?', image_url: '/mira.png', bet_amount: 45, probability: 62, agent: 'GROK' },
+          { id: 'mock-2', marketQuestion: 'Will AI pass exam?', image_url: '/mira.png', bet_amount: 12, probability: 74, agent: 'CLAUDE' },
+          { id: 'mock-3', marketQuestion: 'Will X go viral?', image_url: '/mira.png', bet_amount: 3, probability: 40, agent: 'GROK' },
+          { id: 'mock-4', marketQuestion: 'Will Y be acquired?', image_url: '/mira.png', bet_amount: 90, probability: 58, agent: 'CLAUDE' },
+          { id: 'mock-5', marketQuestion: 'Will Z ship v2?', image_url: '/mira.png', bet_amount: 7, probability: 35, agent: 'GROK' },
+        ];
+      }
+    } catch (e) {
+      // ignore URL parsing errors
+    }
     return [];
   });
+  // Read URL params once: allow forcing demo or API-driven bubbles.
+  let urlParams: URLSearchParams;
+  try {
+    urlParams = new URLSearchParams(window.location.search);
+  } catch (e) {
+    urlParams = new URLSearchParams();
+  }
+  const useMockParam = urlParams.get('simulate_bubbles') === '1';
+  // If `disable_rtdb=1` is provided, keep using API/cache items (legacy behaviour).
+  const disableRtdb = urlParams.get('disable_rtdb') === '1';
   // Fetch predictions for frosted bubbles - non-blocking
   useEffect(() => {
     const loadPredictions = async () => {
@@ -86,22 +111,26 @@ const Landing = () => {
     <div className="fixed inset-0 bg-background overflow-hidden">
       {/* Bubbles Background - NO CLICKS ALLOWED */}
       <div className="absolute inset-0 z-0" style={{ pointerEvents: 'none' }}>
-        {predictions.length > 0 ? (
-          <PredictionBubbleCanvas
-            items={predictions}
-            // background landing has pointer events disabled by parent wrapper
-            onBubbleClick={undefined}
-          />
-        ) : null}
+        {useMockParam ? (
+          // Dev demo override: pass mocked items
+          <PredictionBubbleCanvas items={predictions} onBubbleClick={undefined} />
+        ) : disableRtdb ? (
+          // Legacy mode: use API/cache payload if available
+          predictions.length > 0 ? <PredictionBubbleCanvas items={predictions} onBubbleClick={undefined} /> : null
+        ) : (
+          // Default: let the canvas subscribe to Firebase `/agent_predictions` itself
+          <PredictionBubbleCanvas onBubbleClick={undefined} />
+        )}
       </div>
 
       {/* Frosted Glass Overlay - Full Page */}
       <div
         className="absolute inset-0 z-30 pointer-events-none"
         style={{
-          backdropFilter: 'blur(20px) saturate(180%)',
-          WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-          backgroundColor: 'rgba(0, 0, 0, 0.2)',
+          // Reduced blur and opacity for a clearer background while keeping the frosted look
+          backdropFilter: 'blur(8px) saturate(140%)',
+          WebkitBackdropFilter: 'blur(8px) saturate(140%)',
+          backgroundColor: 'rgba(0, 0, 0, 0.12)',
         }}
       />
 

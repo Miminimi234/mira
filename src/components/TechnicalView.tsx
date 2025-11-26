@@ -370,28 +370,28 @@ export const TechnicalView = ({ mockAgents, simulate = false }: { mockAgents?: A
         <div className="bg-card border border-border p-3 rounded-2xl flex flex-col min-h-0">
           <div className="text-[10px] text-center text-foreground mb-2 font-mono flex-shrink-0">Performance Metrics</div>
           <div className="flex-1 min-h-0">
-              <ResponsiveContainer width="100%" height={220}>
-                <RadarChart data={performanceData} outerRadius={90}>
-                  <PolarGrid stroke="#26313a" />
-                  <PolarAngleAxis dataKey="metric" tick={{ fill: '#7f95a6', fontSize: 11 }} />
-                  {/* Render radars for each known agent so they overlap like the reference */}
-                  {['DEEPSEEK','CLAUDE','QWEN','GEMINI','GROK','GPT5'].map((key, i) => {
-                    const color = AGENT_COLORS[key] ?? '#8b91a8';
-                    return (
-                      <Radar
-                        key={key}
-                        name={key}
-                        dataKey={key.toLowerCase()}
-                        stroke={color}
-                        fill={color}
-                        fillOpacity={0.08}
-                        strokeWidth={1.5}
-                        dot={false}
-                      />
-                    );
-                  })}
-                </RadarChart>
-              </ResponsiveContainer>
+            <ResponsiveContainer width="100%" height={220}>
+              <RadarChart data={performanceData} outerRadius={90}>
+                <PolarGrid stroke="#26313a" />
+                <PolarAngleAxis dataKey="metric" tick={{ fill: '#7f95a6', fontSize: 11 }} />
+                {/* Render radars for each known agent so they overlap like the reference */}
+                {['DEEPSEEK', 'CLAUDE', 'QWEN', 'GEMINI', 'GROK', 'GPT5'].map((key, i) => {
+                  const color = AGENT_COLORS[key] ?? '#8b91a8';
+                  return (
+                    <Radar
+                      key={key}
+                      name={key}
+                      dataKey={key.toLowerCase()}
+                      stroke={color}
+                      fill={color}
+                      fillOpacity={0.08}
+                      strokeWidth={1.5}
+                      dot={false}
+                    />
+                  );
+                })}
+              </RadarChart>
+            </ResponsiveContainer>
           </div>
         </div>
 
@@ -403,7 +403,7 @@ export const TechnicalView = ({ mockAgents, simulate = false }: { mockAgents?: A
               <RadarChart data={tradingActivityData} outerRadius={90}>
                 <PolarGrid stroke="#26313a" />
                 <PolarAngleAxis dataKey="metric" tick={{ fill: '#7f95a6', fontSize: 11 }} />
-                {['DEEPSEEK','CLAUDE','QWEN','GEMINI','GROK','GPT5'].map((key) => (
+                {['DEEPSEEK', 'CLAUDE', 'QWEN', 'GEMINI', 'GROK', 'GPT5'].map((key) => (
                   <Radar key={key} name={key} dataKey={key.toLowerCase()} stroke={AGENT_COLORS[key] ?? '#8b91a8'} fill={AGENT_COLORS[key] ?? '#8b91a8'} fillOpacity={0.08} strokeWidth={1.5} dot={false} />
                 ))}
               </RadarChart>
@@ -419,7 +419,7 @@ export const TechnicalView = ({ mockAgents, simulate = false }: { mockAgents?: A
               <RadarChart data={riskMetricsData} outerRadius={90}>
                 <PolarGrid stroke="#26313a" />
                 <PolarAngleAxis dataKey="metric" tick={{ fill: '#7f95a6', fontSize: 11 }} />
-                {['DEEPSEEK','CLAUDE','QWEN','GEMINI','GROK','GPT5'].map((key) => (
+                {['DEEPSEEK', 'CLAUDE', 'QWEN', 'GEMINI', 'GROK', 'GPT5'].map((key) => (
                   <Radar key={key} name={key} dataKey={key.toLowerCase()} stroke={AGENT_COLORS[key] ?? '#8b91a8'} fill={AGENT_COLORS[key] ?? '#8b91a8'} fillOpacity={0.08} strokeWidth={1.5} dot={false} />
                 ))}
               </RadarChart>
