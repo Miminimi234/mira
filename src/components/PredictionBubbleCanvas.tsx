@@ -6,14 +6,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { PredictionNodeData } from "./PredictionTypes";
 
 type Props = {
-    items: PredictionNodeData[];
+    items?: PredictionNodeData[];
+    showTitle?: boolean;
     onBubbleClick?: (item: PredictionNodeData) => void;
 };
 
 // D3-powered bubble map. Mirrors the standalone HTML example: strong center pull,
 // collision avoidance, drag with snap-back and responsive resizing. Calls
 // `onBubbleClick` when a bubble is clicked.
-export default function PredictionBubbleCanvas({ items = [], onBubbleClick }: Props) {
+export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle }: Props) {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const svgRef = useRef<SVGSVGElement | null>(null);
 
@@ -38,7 +39,7 @@ export default function PredictionBubbleCanvas({ items = [], onBubbleClick }: Pr
         };
         window.addEventListener('mira-decision-filter', handler as EventListener);
         return () => window.removeEventListener('mira-decision-filter', handler as EventListener);
-    }, []);
+    }, [items]);
     // Helper that looks up market entries either directly or under a 'markets' child
     const getMarketEntry = (k: any) => {
         try {
@@ -718,10 +719,44 @@ export default function PredictionBubbleCanvas({ items = [], onBubbleClick }: Pr
         <div ref={containerRef} style={{ width: "100%", height: "100%", position: "absolute", inset: 0, background: "#000" }}>
             <style>{`\n                .bubble { cursor:grab; stroke-width:3; transition:all .25s; }\n                .bubble:hover { stroke:white !important; stroke-width:5 !important; }\n                .bubble.positive { stroke:#00ff41; fill:#001a08; }\n                .bubble.negative { stroke:#ff0066; fill:#1a0008; }\n                .symbol { font-weight:900; font-size:14px; fill:white; text-anchor:middle; dominant-baseline:middle; pointer-events:none; }\n                .pct { font-size:12px; fill:white; text-anchor:middle; dominant-baseline:middle; pointer-events:none; }\n                .title { font-weight:800; font-size:12px; fill:white; text-anchor:middle; dominant-baseline:middle; pointer-events:none; }\n                .decision { font-size:16px; text-anchor:middle; dominant-baseline:middle; pointer-events:none; font-weight:900; }\n                .amount { fill:#fff; text-anchor:middle; dominant-baseline:middle; pointer-events:none; font-weight:800; }\n            `}</style>
 
-            <div style={{ position: "absolute", top: 12, left: 16, zIndex: 10, display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ color: '#fff', fontSize: 18, fontWeight: 800, marginRight: 8 }}>BUBBLE MAP</div>
-            </div>
+            {showTitle !== false && (
+                <div style={{ position: "absolute", top: 12, left: 16, zIndex: 10, display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ color: '#fff', fontSize: 18, fontWeight: 800, marginRight: 8 }}>BUBBLE MAP</div>
+                </div>
+            )}
             <svg ref={svgRef} style={{ width: "100%", height: "100%" }} />
+            {/* Overlay messages for empty/no-data states */}
+            {(() => {
+                const usingItemsProp = Array.isArray(items);
+                const nodeCount = (nodes || []).length;
+                // If using parent-provided items and it's intentionally empty, show 'No matches'
+                if (usingItemsProp && nodeCount === 0) {
+                    return (
+                        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 20, pointerEvents: 'none' }}>
+                            <div style={{ color: '#fff', background: 'rgba(0,0,0,0.5)', padding: '12px 18px', borderRadius: 8, fontSize: 14 }}>
+                                No matches
+                            </div>
+                        </div>
+                    );
+                }
+
+                // Intentionally do not show a connecting message while waiting for RTDB payloads
+                // (avoids transient text before bubbles render). The canvas will render
+                // nothing in this interim; explicit empty states still show meaningful messages.
+
+                // If subscribed but received empty array, show no live predictions
+                if (!usingItemsProp && Array.isArray(fetchedItems) && fetchedItems.length === 0) {
+                    return (
+                        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 20, pointerEvents: 'none' }}>
+                            <div style={{ color: '#fff', background: 'rgba(0,0,0,0.5)', padding: '12px 18px', borderRadius: 8, fontSize: 14 }}>
+                                No live predictions
+                            </div>
+                        </div>
+                    );
+                }
+
+                return null;
+            })()}
         </div>
     );
 }

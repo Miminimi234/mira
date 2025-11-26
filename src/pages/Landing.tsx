@@ -6,46 +6,19 @@ import { TypewriterText } from "@/components/TypewriterText";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
-import { useEffect, useState } from "react";
+
 import { useNavigate } from "react-router-dom";
 
 const Landing = () => {
   const navigate = useNavigate();
-  const [predictions, setPredictions] = useState<PredictionNodeData[]>(() => {
-    // Load from cache immediately for instant display
-    try {
-      const cached = sessionStorage.getItem('landing_predictions_cache');
-      const cacheTime = sessionStorage.getItem('landing_predictions_cache_time');
-      if (cached && cacheTime) {
-        const age = Date.now() - parseInt(cacheTime);
-        // Use cache if less than 2 minutes old
-        if (age < 120000) {
-          const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            return parsed.slice(0, 50);
-          }
-        }
-      }
-    } catch (e) {
-      // Ignore cache errors
-    }
-    // Development helper: allow forcing demo bubbles via URL ?simulate_bubbles=1
-    try {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get('simulate_bubbles') === '1') {
-        return [
-          { id: 'mock-1', marketQuestion: 'Will BTC > 80k?', image_url: '/mira.png', bet_amount: 45, probability: 62, agent: 'GROK' },
-          { id: 'mock-2', marketQuestion: 'Will AI pass exam?', image_url: '/mira.png', bet_amount: 12, probability: 74, agent: 'CLAUDE' },
-          { id: 'mock-3', marketQuestion: 'Will X go viral?', image_url: '/mira.png', bet_amount: 3, probability: 40, agent: 'GROK' },
-          { id: 'mock-4', marketQuestion: 'Will Y be acquired?', image_url: '/mira.png', bet_amount: 90, probability: 58, agent: 'CLAUDE' },
-          { id: 'mock-5', marketQuestion: 'Will Z ship v2?', image_url: '/mira.png', bet_amount: 7, probability: 35, agent: 'GROK' },
-        ];
-      }
-    } catch (e) {
-      // ignore URL parsing errors
-    }
-    return [];
-  });
+  // Demo mock items used only when `?simulate_bubbles=1` is present
+  const demoPredictions: PredictionNodeData[] = [
+    { id: 'mock-1', marketQuestion: 'Will BTC > 80k?', image_url: '/mira.png', bet_amount: 45, probability: 62, agent: 'GROK' } as any,
+    { id: 'mock-2', marketQuestion: 'Will AI pass exam?', image_url: '/mira.png', bet_amount: 12, probability: 74, agent: 'CLAUDE' } as any,
+    { id: 'mock-3', marketQuestion: 'Will X go viral?', image_url: '/mira.png', bet_amount: 3, probability: 40, agent: 'GROK' } as any,
+    { id: 'mock-4', marketQuestion: 'Will Y be acquired?', image_url: '/mira.png', bet_amount: 90, probability: 58, agent: 'CLAUDE' } as any,
+    { id: 'mock-5', marketQuestion: 'Will Z ship v2?', image_url: '/mira.png', bet_amount: 7, probability: 35, agent: 'GROK' } as any,
+  ];
   // Read URL params once: allow forcing demo or API-driven bubbles.
   let urlParams: URLSearchParams;
   try {
@@ -54,52 +27,8 @@ const Landing = () => {
     urlParams = new URLSearchParams();
   }
   const useMockParam = urlParams.get('simulate_bubbles') === '1';
-  // If `disable_rtdb=1` is provided, keep using API/cache items (legacy behaviour).
+  // If `disable_rtdb=1` is provided, allow legacy behavior, but by default Landing uses RTDB like the canvas.
   const disableRtdb = urlParams.get('disable_rtdb') === '1';
-  // Fetch predictions for frosted bubbles - non-blocking
-  useEffect(() => {
-    const loadPredictions = async () => {
-      try {
-        const { API_BASE_URL } = await import('@/lib/apiConfig');
-
-        // Create abort controller for timeout - reduced to 5 seconds for faster failure
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout (faster failure)
-
-        const response = await fetch(`${API_BASE_URL}/api/predictions?category=All Markets&limit=50`, {
-          signal: controller.signal,
-          cache: 'no-store', // Bypass browser cache, use server Redis cache
-        });
-
-        clearTimeout(timeoutId);
-
-        if (response.ok) {
-          const data = await response.json();
-          if (Array.isArray(data.predictions)) {
-            // Limit to first 50 for performance
-            const limited = data.predictions.slice(0, 50);
-            setPredictions(limited);
-            // Cache for next time
-            try {
-              sessionStorage.setItem('landing_predictions_cache', JSON.stringify(data.predictions));
-              sessionStorage.setItem('landing_predictions_cache_time', Date.now().toString());
-            } catch (e) {
-              // Ignore storage errors
-            }
-          }
-        }
-      } catch (error) {
-        // Silently fail - use cache if available
-        if (error instanceof Error && error.name !== 'AbortError') {
-          console.error('Failed to fetch predictions:', error);
-        }
-      }
-    };
-
-    // Always fetch in background - don't block rendering
-    // If we have cache, show it immediately, then update when fetch completes
-    loadPredictions();
-  }, []);
 
   const handleEnterApp = () => {
     // Store flag to trigger animations in Index page
@@ -113,13 +42,10 @@ const Landing = () => {
       <div className="absolute inset-0 z-0" style={{ pointerEvents: 'none' }}>
         {useMockParam ? (
           // Dev demo override: pass mocked items
-          <PredictionBubbleCanvas items={predictions} onBubbleClick={undefined} />
-        ) : disableRtdb ? (
-          // Legacy mode: use API/cache payload if available
-          predictions.length > 0 ? <PredictionBubbleCanvas items={predictions} onBubbleClick={undefined} /> : null
+          <PredictionBubbleCanvas items={demoPredictions} onBubbleClick={undefined} showTitle={false} />
         ) : (
-          // Default: let the canvas subscribe to Firebase `/agent_predictions` itself
-          <PredictionBubbleCanvas onBubbleClick={undefined} />
+          // Default: let the canvas subscribe to Firebase `/agent_predictions` itself (RTDB is single source of truth)
+          <PredictionBubbleCanvas onBubbleClick={undefined} showTitle={false} />
         )}
       </div>
 
@@ -133,6 +59,8 @@ const Landing = () => {
           backgroundColor: 'rgba(0, 0, 0, 0.12)',
         }}
       />
+
+      {/* Landing uses RTDB as the single source of truth. Use `?simulate_bubbles=1` to preview demo bubbles locally. */}
 
       {/* Enter App Button - Top Right Corner */}
       <motion.div
