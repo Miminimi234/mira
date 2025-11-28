@@ -1,7 +1,6 @@
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { getDb } from '@/lib/firebase/client';
 import { get as dbGet, off as dbOff, query as dbQuery, ref as dbRef, limitToLast, onChildAdded, orderByChild, startAt } from 'firebase/database';
-import { ChevronDown, DollarSign, ZoomIn, ZoomOut } from "lucide-react";
+import { DollarSign, ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Area, CartesianGrid, ComposedChart, Customized, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { TechnicalView } from "./TechnicalView";
@@ -66,6 +65,7 @@ const agents = [
   { id: "GPT5", name: "GPT-5", shortName: "GPT-5", color: "#C8C8FF", logoKey: "GPT5" },
   { id: "QWEN", name: "Qwen 2.5", shortName: "QWEN", color: "#6b9e7d", logoKey: "QWEN" },
 ];
+
 
 const BACKEND_TO_CHART_ID: Record<string, keyof ChartDataPoint> = {
   'GROK_4': 'GROK',
@@ -919,44 +919,7 @@ export const PerformanceChart = ({ predictions = [], selectedMarketId = null, se
         </span>
         <div className="flex gap-1 sm:gap-2 items-center min-w-0 flex-shrink">
           {/* (sample toggle removed) */}
-          {/* Zoom Controls - only show in chart view */}
-          {viewMode === "chart" && (
-            <div className="flex gap-0.5 sm:gap-1 items-center border-r border-border pr-1 sm:pr-2 mr-1 sm:mr-2 flex-shrink-0">
-              <button
-                onClick={handleZoomOut}
-                className="text-[9px] sm:text-xs px-1 sm:px-1.5 py-0.5 sm:py-1 border border-border rounded-full hover:bg-muted transition-colors flex items-center justify-center"
-                title="Zoom Out"
-              >
-                <ZoomOut className="h-2.5 sm:h-3 w-2.5 sm:w-3" />
-              </button>
-              <button
-                onClick={handleZoomIn}
-                className="text-[9px] sm:text-xs px-1 sm:px-1.5 py-0.5 sm:py-1 border border-border rounded-full hover:bg-muted transition-colors flex items-center justify-center"
-                title="Zoom In"
-              >
-                <ZoomIn className="h-2.5 sm:h-3 w-2.5 sm:w-3" />
-              </button>
-            </div>
-          )}
-          {/* Horizontal zoom controls */}
-          {viewMode === "chart" && (
-            <div className="flex gap-0.5 sm:gap-1 items-center border-r border-border pr-1 sm:pr-2 mr-1 sm:mr-2 flex-shrink-0">
-              <button
-                onClick={handleHZoomOut}
-                className="text-[9px] sm:text-xs px-1 sm:px-1.5 py-0.5 sm:py-1 border border-border rounded-full hover:bg-muted transition-colors flex items-center justify-center"
-                title="Horizontal Zoom Out"
-              >
-                <span style={{ fontSize: 12, lineHeight: 1 }}>H-</span>
-              </button>
-              <button
-                onClick={handleHZoomIn}
-                className="text-[9px] sm:text-xs px-1 sm:px-1.5 py-0.5 sm:py-1 border border-border rounded-full hover:bg-muted transition-colors flex items-center justify-center"
-                title="Horizontal Zoom In"
-              >
-                <span style={{ fontSize: 12, lineHeight: 1 }}>H+</span>
-              </button>
-            </div>
-          )}
+          {/* Zoom controls moved to bottom-left of chart area for easier access */}
           {/* View Mode Toggle */}
           <div className="flex gap-0.5 sm:gap-1 flex-shrink-0">
             <button
@@ -974,31 +937,26 @@ export const PerformanceChart = ({ predictions = [], selectedMarketId = null, se
               TECH
             </button>
           </div>
-
-          {/* Agent Dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger className="flex items-center gap-1 sm:gap-2 px-1.5 sm:px-3 py-0.5 sm:py-1 text-[9px] sm:text-xs font-medium text-foreground hover:bg-muted/50 transition-colors border border-border bg-background rounded-full min-w-0 overflow-hidden">
-              <span className="truncate max-w-[60px] sm:max-w-none">{selectedAgent || "All"}</span>
-              <ChevronDown className="h-2.5 sm:h-3 w-2.5 sm:w-3 opacity-50 flex-shrink-0" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48 bg-background border-border rounded-xl">
-              <DropdownMenuItem
-                onClick={() => setSelectedAgent(null)}
-                className={`cursor-pointer text-sm ${!selectedAgent ? 'bg-muted text-primary font-medium' : ''}`}
-              >
-                All Agents
-              </DropdownMenuItem>
-              {filteredAgents.map((agent) => (
-                <DropdownMenuItem
-                  key={agent.id}
-                  onClick={() => setSelectedAgent(agent.id === selectedAgent ? null : agent.id)}
-                  className={`cursor-pointer text-sm ${selectedAgent === agent.id ? 'bg-muted text-primary font-medium' : ''}`}
-                >
-                  {agent.name}
-                </DropdownMenuItem>
+          {/* Agent filter (dropdown) - allows showing only one agent or all */}
+          <div className="flex items-center ml-2">
+            <label htmlFor="agent-filter" className="sr-only">Agent Filter</label>
+            <select
+              id="agent-filter"
+              value={selectedAgent ?? ''}
+              onChange={(e) => {
+                const v = e.target.value;
+                setSelectedAgent(v === '' ? null : v);
+              }}
+              className="text-[10px] sm:text-xs border rounded px-2 py-1 text-white outline-none focus:ring-0 appearance-none"
+              title="Show only selected agent"
+              style={{ backgroundColor: '#050608', borderColor: 'rgba(255,255,255,0.06)', color: '#FFFFFF' }}
+            >
+              <option value="" style={{ backgroundColor: '#050608', color: '#FFFFFF' }}>All agents</option>
+              {agents.map((a) => (
+                <option key={a.id} value={a.id} style={{ backgroundColor: '#050608', color: '#FFFFFF' }}>{a.name}</option>
               ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -1033,6 +991,48 @@ export const PerformanceChart = ({ predictions = [], selectedMarketId = null, se
 
           <div style={{ padding: '8px 12px' }}>
             <div className="chart-area" style={{ display: 'flex', alignItems: 'stretch', height: chartHeight, position: 'relative' }}>
+              {/* Bottom-left zoom controls (moved from header) */}
+              {viewMode === 'chart' && (
+                <div style={{ position: 'absolute', left: 12, bottom: 12, zIndex: 120, display: 'flex', gap: 6 }}>
+                  <div className="flex gap-0.5 items-center bg-[rgba(0,0,0,0.35)] p-1 rounded-md border border-[rgba(255,255,255,0.04)]">
+                    <button
+                      onClick={handleZoomOut}
+                      className="text-[10px] px-2 py-1 border border-border rounded-full hover:bg-muted transition-colors flex items-center justify-center"
+                      title="Zoom Out"
+                      aria-label="Zoom Out"
+                    >
+                      <ZoomOut className="h-3 w-3" />
+                    </button>
+                    <button
+                      onClick={handleZoomIn}
+                      className="text-[10px] px-2 py-1 border border-border rounded-full hover:bg-muted transition-colors flex items-center justify-center"
+                      title="Zoom In"
+                      aria-label="Zoom In"
+                    >
+                      <ZoomIn className="h-3 w-3" />
+                    </button>
+                  </div>
+
+                  <div className="flex gap-0.5 items-center bg-[rgba(0,0,0,0.35)] p-1 rounded-md border border-[rgba(255,255,255,0.04)]">
+                    <button
+                      onClick={handleHZoomOut}
+                      className="text-[10px] px-2 py-1 border border-border rounded-full hover:bg-muted transition-colors flex items-center justify-center"
+                      title="Horizontal Zoom Out"
+                      aria-label="Horizontal Zoom Out"
+                    >
+                      <span style={{ fontSize: 12, lineHeight: 1 }}>H-</span>
+                    </button>
+                    <button
+                      onClick={handleHZoomIn}
+                      className="text-[10px] px-2 py-1 border border-border rounded-full hover:bg-muted transition-colors flex items-center justify-center"
+                      title="Horizontal Zoom In"
+                      aria-label="Horizontal Zoom In"
+                    >
+                      <span style={{ fontSize: 12, lineHeight: 1 }}>H+</span>
+                    </button>
+                  </div>
+                </div>
+              )}
               {/* (Removed vertical hover handle; use full-width splitter instead) */}
               {/* Fixed Y-axis column (labels remain visible while chart scrolls) */}
               <div style={{ width: axisWidth, paddingTop: chartMargin.top, paddingBottom: chartMargin.bottom, boxSizing: 'border-box', color: '#C6CBD9', fontSize: 11, fontFamily: 'system-ui, -apple-system, sans-serif' }}>

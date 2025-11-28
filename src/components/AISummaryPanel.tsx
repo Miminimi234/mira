@@ -917,8 +917,17 @@ export const AISummaryPanel = ({ onTradeClick, onDecisionsUpdate, selectedAgentF
         ) : filteredDecisions.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
-              <div className="text-[13px] text-muted-foreground font-mono mb-2">No research for selected agent</div>
-              <div className="text-[11px] text-muted-foreground font-mono">Try selecting a different agent or "All Agents"</div>
+              {globalSearch && String(globalSearch).trim() ? (
+                <>
+                  <div className="text-[13px] text-muted-foreground font-mono mb-2">{`No agents have predicted on "${String(globalSearch).trim()}" market`}</div>
+                  <div className="text-[11px] text-muted-foreground font-mono">Try a different search or clear the query</div>
+                </>
+              ) : (
+                <>
+                  <div className="text-[13px] text-muted-foreground font-mono mb-2">No research for selected agent</div>
+                  <div className="text-[11px] text-muted-foreground font-mono">Try selecting a different agent or "All Agents"</div>
+                </>
+              )}
             </div>
           </div>
         ) : (

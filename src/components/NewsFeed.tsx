@@ -1,7 +1,7 @@
-import { motion } from "framer-motion";
-import { Newspaper, ExternalLink } from "lucide-react";
-import { useState, useEffect, useMemo } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { motion } from "framer-motion";
+import { ExternalLink, Newspaper } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
 interface NewsItem {
   id: string;
@@ -71,54 +71,54 @@ export const NewsFeed = () => {
 
   // Process news data (used by both WebSocket and fallback polling)
   const processNewsData = (data: NewsAPIResponse) => {
-      if (data.status === 'ok' && data.articles) {
-        // Transform articles to NewsItem format
-        const transformedArticles: NewsItem[] = data.articles
+    if (data.status === 'ok' && data.articles) {
+      // Transform articles to NewsItem format
+      const transformedArticles: NewsItem[] = data.articles
         .filter(article => article.title && article.title !== '[Removed]')
         .slice(0, 100)
-          .map((article, index) => {
-            const content = `${article.title} ${article.description || ''}`.toLowerCase();
-            let category = 'News';
-            
-            const cryptoKeywords = ['crypto', 'bitcoin', 'ethereum', 'blockchain', 'btc', 'eth', 'xrp', 'solana', 'defi', 'nft', 'altcoin', 'zcash', 'cryptocurrency'];
-            if (cryptoKeywords.some(keyword => content.includes(keyword))) {
-              category = 'Crypto';
-            } else if (content.includes('election') || content.includes('politic') || content.includes('president')) {
-              category = 'Politics';
-            } else if (content.includes('stock') || content.includes('market') || content.includes('dow') || content.includes('s&p')) {
-              category = 'Markets';
-            } else if (content.includes('economy') || content.includes('fed') || content.includes('inflation')) {
-              category = 'Economics';
-            } else if (content.includes('ai') || content.includes('technology') || content.includes('tech')) {
-              category = 'Technology';
-            } else if (content.includes('sport') || content.includes('game')) {
-              category = 'Sports';
-            } else if (content.includes('climate') || content.includes('weather')) {
-              category = 'Climate';
-            }
-            
-            return {
-              id: article.url || `news-${index}`,
-              title: article.title,
-              source: article.source?.name || 'Unknown',
-            time: '',
-              category,
-              url: article.url,
-              imageUrl: article.urlToImage || undefined,
-              description: article.description || undefined,
-              publishedAt: article.publishedAt,
-            };
-          });
+        .map((article, index) => {
+          const content = `${article.title} ${article.description || ''}`.toLowerCase();
+          let category = 'News';
 
-        transformedArticles.sort((a, b) => {
-          const timeA = new Date(a.publishedAt || 0).getTime();
-          const timeB = new Date(b.publishedAt || 0).getTime();
-          return timeB - timeA;
+          const cryptoKeywords = ['crypto', 'bitcoin', 'ethereum', 'blockchain', 'btc', 'eth', 'xrp', 'solana', 'defi', 'nft', 'altcoin', 'zcash', 'cryptocurrency'];
+          if (cryptoKeywords.some(keyword => content.includes(keyword))) {
+            category = 'Crypto';
+          } else if (content.includes('election') || content.includes('politic') || content.includes('president')) {
+            category = 'Politics';
+          } else if (content.includes('stock') || content.includes('market') || content.includes('dow') || content.includes('s&p')) {
+            category = 'Markets';
+          } else if (content.includes('economy') || content.includes('fed') || content.includes('inflation')) {
+            category = 'Economics';
+          } else if (content.includes('ai') || content.includes('technology') || content.includes('tech')) {
+            category = 'Technology';
+          } else if (content.includes('sport') || content.includes('game')) {
+            category = 'Sports';
+          } else if (content.includes('climate') || content.includes('weather')) {
+            category = 'Climate';
+          }
+
+          return {
+            id: article.url || `news-${index}`,
+            title: article.title,
+            source: article.source?.name || 'Unknown',
+            time: '',
+            category,
+            url: article.url,
+            imageUrl: article.urlToImage || undefined,
+            description: article.description || undefined,
+            publishedAt: article.publishedAt,
+          };
         });
 
-        setAllNews(transformedArticles);
-        setLastUpdate(new Date());
-      }
+      transformedArticles.sort((a, b) => {
+        const timeA = new Date(a.publishedAt || 0).getTime();
+        const timeB = new Date(b.publishedAt || 0).getTime();
+        return timeB - timeA;
+      });
+
+      setAllNews(transformedArticles);
+      setLastUpdate(new Date());
+    }
   };
 
   // Fetch news from server proxy (fallback)
@@ -127,13 +127,17 @@ export const NewsFeed = () => {
       setLoading(true);
       const { API_BASE_URL } = await import('@/lib/apiConfig');
       const apiUrl = `${API_BASE_URL}/api/news?source=all`;
+      console.log('[NewsFeed] fetching news from', apiUrl);
       const response = await fetch(apiUrl);
-      
+
       if (!response.ok) {
         throw new Error(`Server error: ${response.status} ${response.statusText}`);
       }
 
       const data: NewsAPIResponse = await response.json();
+      console.log('[NewsFeed] received news payload', { total: (data && (data as any).totalResults), status: data?.status });
+      // Log entire payload in debug builds (trimmed in production)
+      if (!data || !data.articles) console.warn('[NewsFeed] unexpected news payload shape', data);
       processNewsData(data);
     } catch (error) {
       console.error('Error fetching news:', error);
@@ -147,10 +151,10 @@ export const NewsFeed = () => {
 
   // Filter news by selected category and calculate timestamps dynamically
   const news = useMemo(() => {
-    let filtered = selectedCategory === 'All' 
-      ? allNews 
+    let filtered = selectedCategory === 'All'
+      ? allNews
       : allNews.filter(item => item.category === selectedCategory);
-    
+
     // Recalculate timestamps dynamically
     return filtered.map(item => ({
       ...item,
@@ -162,28 +166,33 @@ export const NewsFeed = () => {
   useEffect(() => {
     let unsubscribe: (() => void) | null = null;
     let fallbackInterval: NodeJS.Timeout | null = null;
-    
+
     const setupWebSocket = async () => {
       try {
         const { subscribe } = await import('@/lib/websocket');
-        
+
         unsubscribe = await subscribe('news', (data: NewsAPIResponse) => {
           processNewsData(data);
           setLoading(false);
         });
-        
+
         console.log('[NewsFeed] ✅ WebSocket connected for news');
       } catch (error) {
         console.warn('[NewsFeed] ⚠️  WebSocket failed, falling back to polling:', error);
-        
+
+        // Fallback to polling via server endpoint
+        const { API_BASE_URL } = await import('@/lib/apiConfig');
+        console.log('[NewsFeed] falling back to polling', `${API_BASE_URL}/api/news?source=all`);
         // Fallback to polling
-    fetchNews();
+        fetchNews();
         fallbackInterval = setInterval(fetchNews, 2.5 * 60 * 1000);
       }
     };
-    
+
+    // Always fetch once on mount to populate UI, then try to subscribe for live updates.
+    fetchNews();
     setupWebSocket();
-    
+
     return () => {
       if (unsubscribe) unsubscribe();
       if (fallbackInterval) clearInterval(fallbackInterval);
@@ -203,38 +212,38 @@ export const NewsFeed = () => {
       {/* Header */}
       <div className="border-b border-border bg-bg-elevated flex-shrink-0">
         <div className="h-10 px-4 flex items-center justify-between">
-        <span className="text-xs text-terminal-accent font-mono leading-none flex items-center gap-2">
-          <Newspaper className="w-3 h-3" />
-          &gt; NEWS FEED
-        </span>
-        <div className="flex items-center gap-2">
-          <motion.div
-            className="w-2 h-2 rounded-full bg-trade-yes"
-            animate={{
-              scale: [1, 1.3, 1],
-              opacity: [1, 0.7, 1],
-            }}
-            transition={{ duration: 1.5, repeat: Infinity }}
-          />
-          <span className="text-[10px] text-muted-foreground font-mono">LIVE</span>
+          <span className="text-xs text-terminal-accent font-mono leading-none flex items-center gap-2">
+            <Newspaper className="w-3 h-3" />
+            &gt; NEWS FEED
+          </span>
+          <div className="flex items-center gap-2">
+            <motion.div
+              className="w-2 h-2 rounded-full bg-trade-yes"
+              animate={{
+                scale: [1, 1.3, 1],
+                opacity: [1, 0.7, 1],
+              }}
+              transition={{ duration: 1.5, repeat: Infinity }}
+            />
+            <span className="text-[10px] text-muted-foreground font-mono">LIVE</span>
           </div>
         </div>
         {/* Category Selector Dropdown */}
         <div className="px-4 pb-2 relative z-10" style={{ pointerEvents: 'auto' }}>
           <Select value={selectedCategory} onValueChange={(value) => setSelectedCategory(value as NewsCategory)}>
-            <SelectTrigger 
+            <SelectTrigger
               className="h-7 text-[10px] font-mono border-border bg-muted/50 hover:bg-muted"
               style={{ pointerEvents: 'auto', zIndex: 10 }}
             >
               <SelectValue placeholder="Select category" />
             </SelectTrigger>
-            <SelectContent 
-              className="z-[9999]" 
+            <SelectContent
+              className="z-[9999]"
               style={{ pointerEvents: 'auto', zIndex: 9999 }}
             >
               {NEWS_CATEGORIES.map((category) => (
-                <SelectItem 
-                  key={category} 
+                <SelectItem
+                  key={category}
                   value={category}
                   className="text-[10px] font-mono"
                   style={{ pointerEvents: 'auto' }}
@@ -303,7 +312,7 @@ export const NewsFeed = () => {
                       </div>
                     </div>
                   )}
-                  
+
                   {/* Content */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1.5">

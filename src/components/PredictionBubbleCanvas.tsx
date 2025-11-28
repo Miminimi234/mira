@@ -9,12 +9,14 @@ type Props = {
     items?: PredictionNodeData[];
     showTitle?: boolean;
     onBubbleClick?: (item: PredictionNodeData) => void;
+    viewMode?: 'predictions' | 'markets';
+    searchQuery?: string;
 };
 
 // D3-powered bubble map. Mirrors the standalone HTML example: strong center pull,
 // collision avoidance, drag with snap-back and responsive resizing. Calls
 // `onBubbleClick` when a bubble is clicked.
-export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle }: Props) {
+export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle, viewMode = 'predictions', searchQuery = '' }: Props) {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const svgRef = useRef<SVGSVGElement | null>(null);
 
@@ -63,9 +65,9 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
         if (Math.abs(num) <= 1) return Math.round(num * 100);
         return Math.round(num);
     };
-    // Subscribe to Firebase `predictions` and show only agent predictions.
-    // If a `items` prop is provided (e.g. Landing page API fetch), prefer that
-    // and skip the realtime subscription so the background can render.
+    // Subscribe to Firebase `predictions` only when in 'predictions' view and
+    // when a parent didn't provide an explicit `items` prop. If a parent
+    // supplies `items` we always prefer it (e.g. landing page demo data).
     useEffect(() => {
         // If a parent provided an `items` prop (even an empty array), prefer it
         // and skip the realtime subscription. This ensures search that yields
@@ -103,6 +105,12 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
             } catch (err) {
                 setFetchedItems([]);
             }
+            return;
+        }
+        // Only subscribe to agent predictions when the caller wants the
+        // predictions view. If the viewMode is 'markets' we intentionally skip
+        // subscribing here — markets will be rendered from the markets map.
+        if (viewMode !== 'predictions') {
             return;
         }
 
@@ -213,7 +221,77 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
             // failed to subscribe to predictions (verbose log removed)
         }
         return () => { if (unsub) try { unsub(); } catch (_) { } };
-    }, []);
+    }, [items, viewMode]);
+
+    // When the parent wants the 'markets' view, generate bubbles from the
+    // canonical markets map we already listen to above. This keeps market
+    // rendering separate from agent predictions and avoids subscribing to
+    // agent_predictions when not needed.
+    useEffect(() => {
+        if (Array.isArray(items)) return; // parent-supplied items take priority
+        if (viewMode !== 'markets') return;
+
+        try {
+            const mapMarketsToNodes = (map: Record<string, any> | null) => {
+                try {
+                    const entries = Object.entries(map || {});
+                    const arr = entries.map(([k, v]: [string, any]) => {
+                        const m = v || {};
+                        const id = m.id || k;
+                        const imageUrl = m.image || m.imageUrl || m.image_url || m.thumb || m.logo || null;
+                        const slug = m.slug || m.marketSlug || m.market_slug || k;
+                        const title = m.question || m.title || m.market || m.marketQuestion || '';
+                        const prob = (typeof m.yes_price === 'number') ? Math.round(m.yes_price * 100) : (typeof m.probability === 'number' ? Math.round(m.probability) : 0);
+                        const volume = Number(m.volume || m.total_volume || m.volume24h || m.volume_all_time || 0);
+                        const change = m.change ?? 0;
+                        return {
+                            id: String(id),
+                            // For market view, set `market` to the slug so title text shows slug
+                            market: slug,
+                            marketSlug: slug,
+                            imageUrl,
+                            volume: volume,
+                            marketId: String(id),
+                            probability: prob,
+                            decision: undefined,
+                            investmentUsd: volume,
+                            agentId: null,
+                            agentName: null,
+                            raw: m,
+                            change,
+                            __isMarket: true,
+                        };
+                    });
+                    // Sort markets by volume so most active appear first
+                    arr.sort((a: any, b: any) => (b.volume || 0) - (a.volume || 0));
+                    // Apply search filter when provided by parent (case-insensitive substring match on slug/title/id)
+                    try {
+                        const q = (searchQuery || '').toString().trim().toLowerCase();
+                        if (q) {
+                            const filtered = arr.filter((it: any) => {
+                                try {
+                                    const slug = String(it.marketSlug || it.market || it.id || it.raw?.slug || it.raw?.title || '').toLowerCase();
+                                    return slug.includes(q);
+                                } catch (e) { return false; }
+                            });
+                            setFetchedItems((filtered || []).slice(0, 100));
+                        } else {
+                            setFetchedItems(arr.slice(0, 100));
+                        }
+                    } catch (e) {
+                        setFetchedItems(arr.slice(0, 100));
+                    }
+                } catch (e) {
+                    setFetchedItems([]);
+                }
+            };
+
+            // Use the current marketsRef (may be populated by the markets listener)
+            mapMarketsToNodes(marketsRef.current || marketsMapState || {});
+        } catch (e) {
+            setFetchedItems([]);
+        }
+    }, [viewMode, marketsMapState, items, searchQuery]);
 
     // Subscribe to markets so we can resolve image URLs for predictions that only have marketId
     useEffect(() => {
@@ -613,6 +691,8 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
                     liquidity: sd.liquidity ?? sd.raw?.liquidity ?? 0,
                     predicted: true,
                 };
+                // mark market-sourced nodes so downstream panels can render accordingly
+                constructed.isMarket = !!(sd && (sd.__isMarket || sd.isMarket));
                 // Attach agent-specific bet fields so MarketDetailsPanel can display them
                 constructed.bet_amount = sd.bet_amount ?? sd.raw?.bet_amount ?? sd.investmentUsd ?? sd.raw?.investmentUsd ?? sd.raw?.bet ?? sd.raw?.amount ?? undefined;
                 constructed.investmentUsd = sd.investmentUsd ?? sd.raw?.investmentUsd ?? sd.bet_amount ?? sd.raw?.bet_amount ?? undefined;
@@ -818,33 +898,77 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
         // Update text content on enter+update: put decision where the title used to be,
         // then amount below. Decision is colored green for YES and red for NO.
         merged.select('text.decision')
-            .text((d: any) => getDecisionLabel(d))
             .attr('y', (d: any) => -Math.round((d.r || 24) * 0.18))
-            .attr('font-size', (d: any) => Math.max(12, Math.round((d.r || 24) * 0.48)))
-            .attr('fill', (d: any) => {
-                const raw = String((d.decision || d.position || d.raw?.decision || d.raw?.side || '') || '').toUpperCase();
-                if (raw === 'YES' || raw.startsWith('Y')) return 'hsl(var(--trade-yes))';
-                if (raw === 'NO' || raw.startsWith('N')) return 'hsl(var(--trade-no))';
-                if (raw === 'UP') return 'hsl(var(--trade-up))';
-                if (raw === 'DOWN') return 'hsl(var(--trade-down))';
-                return 'hsl(var(--trade-other))';
-            })
+            // Increase market slug font-size: larger multiplier and higher minimum
+            .attr('font-size', (d: any) => d && d.__isMarket ? Math.max(16, Math.round((d.r || 24) * 0.85)) : Math.max(12, Math.round((d.r || 24) * 0.48)))
             .attr('font-weight', '900')
             .attr('stroke', '#000')
             .attr('stroke-width', (d: any) => Math.max(0.5, Math.round((d.r || 24) * 0.06)))
-            .attr('paint-order', 'stroke');
+            .attr('paint-order', 'stroke')
+            .each(function (d: any) {
+                const el = d3.select(this);
+                el.selectAll('tspan').remove();
+
+                if (d && d.__isMarket) {
+                    // Prepare slug: break after 14 chars, truncate after 24 chars total
+                    const slugRaw = String(d.market || d.marketSlug || '');
+                    const maxTotal = 24;
+                    const firstLineLen = 14;
+                    let first = slugRaw.slice(0, firstLineLen);
+                    let rest = slugRaw.slice(firstLineLen, maxTotal);
+                    if (slugRaw.length > maxTotal) {
+                        rest = rest.slice(0, Math.max(0, maxTotal - firstLineLen));
+                        // append ellipsis when truncated
+                        if (rest.length > 0) rest = rest.replace(/\s+$/, '') + '…';
+                        else first = first.slice(0, Math.max(0, first.length - 1)) + '…';
+                    }
+
+                    // First tspan (line 1)
+                    el.append('tspan')
+                        .attr('x', 0)
+                        .attr('dy', '0')
+                        .attr('fill', '#ffffff')
+                        .text(first);
+
+                    // Second tspan (line 2) if any
+                    if (rest && rest.length > 0) {
+                        el.append('tspan')
+                            .attr('x', 0)
+                            .attr('dy', '1.05em')
+                            .attr('fill', '#ffffff')
+                            .text(rest);
+                    }
+                } else {
+                    // Default behavior for prediction decision labels
+                    const label = getDecisionLabel(d);
+                    el.append('tspan')
+                        .attr('x', 0)
+                        .attr('dy', '0')
+                        .attr('fill', (() => {
+                            try {
+                                const raw = String((d.decision || d.position || d.raw?.decision || d.raw?.side || '') || '').toUpperCase();
+                                if (raw === 'YES' || raw.startsWith('Y')) return 'hsl(var(--trade-yes))';
+                                if (raw === 'NO' || raw.startsWith('N')) return 'hsl(var(--trade-no))';
+                                if (raw === 'UP') return 'hsl(var(--trade-up))';
+                                if (raw === 'DOWN') return 'hsl(var(--trade-down))';
+                            } catch (e) { }
+                            return 'hsl(var(--trade-other))';
+                        })())
+                        .text(label);
+                }
+            });
 
         merged.select('text.amount')
-            .text((d: any) => getAmountLabel(d))
-            .attr('y', (d: any) => Math.round((d.r || 24) * 0.12))
-            // Increased multiplier and min size for better readability
-            .attr('font-size', (d: any) => Math.max(12, Math.round((d.r || 24) * 0.38)))
+            .text((d: any) => d && d.__isMarket ? formatAbbrevNumber(d.volume || d.investmentUsd || 0) : getAmountLabel(d))
+            .attr('y', (d: any) => d && d.__isMarket ? Math.round((d.r || 24) * 0.32) : Math.round((d.r || 24) * 0.12))
+            // Market volumes smaller, predictions keep previous size
+            .attr('font-size', (d: any) => d && d.__isMarket ? Math.max(10, Math.round((d.r || 24) * 0.28)) : Math.max(12, Math.round((d.r || 24) * 0.38)))
             .attr('fill', '#ffffff')
             .attr('font-weight', '800');
 
         // Title displayed below the amount — single-line truncated to 10 chars
         merged.select('text.title')
-            .text((d: any) => getTitleLabel(d))
+            .text((d: any) => d && d.__isMarket ? '' : getTitleLabel(d))
             .attr('y', (d: any) => Math.round((d.r || 24) * 0.38))
             .attr('font-size', (d: any) => Math.max(8, Math.round((d.r || 24) * 0.18)))
             .attr('fill', '#ffffff')
@@ -1041,4 +1165,21 @@ function formatChange(c: any) {
     // If value looks like a fraction (0-1), convert to percent
     if (Math.abs(n) <= 1) n = n * 100;
     return (n >= 0 ? "+" : "") + n.toFixed(2) + "%";
+}
+
+function formatAbbrevNumber(n: any) {
+    let num = typeof n === 'number' ? n : (n ? Number(n) : 0);
+    if (!isFinite(num) || isNaN(num)) return '0';
+    num = Math.round(num);
+    const abs = Math.abs(num);
+    if (abs >= 1_000_000_000) {
+        return (Math.round((num / 1_000_000_000) * 10) / 10) + 'B';
+    }
+    if (abs >= 1_000_000) {
+        return (Math.round((num / 1_000_000) * 10) / 10) + 'M';
+    }
+    if (abs >= 1_000) {
+        return (Math.round((num / 1_000) * 10) / 10) + 'K';
+    }
+    return String(num);
 }

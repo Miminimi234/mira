@@ -205,6 +205,7 @@ const Index = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>("All Markets");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState<string>("");
+  const [bubbleViewMode, setBubbleViewMode] = useState<'predictions' | 'markets'>('predictions');
   const [decisionFilter, setDecisionFilter] = useState<'all' | 'yes' | 'no'>('all');
   const [predictions, setPredictions] = useState<PredictionNodeData[]>(() => {
     // Load from cache immediately for instant display
@@ -861,6 +862,8 @@ const Index = () => {
               (constructed as any).endDate = (constructed as any).endDate ?? val.end_date ?? val.ends_at ?? undefined;
               (constructed as any).outcomes = (constructed as any).outcomes ?? val.outcomes ?? undefined;
               (constructed as any).marketSlug = (constructed as any).marketSlug ?? val.slug ?? val.marketSlug ?? undefined;
+              // Mark this constructed object as originating from the canonical markets map
+              (constructed as any).isMarket = true;
             }
           } catch (e) {
             // ignore resolution errors - fallback logic later will still query markets
@@ -950,6 +953,8 @@ const Index = () => {
                 liquidity: val.liquidity ?? 0,
                 predicted: true,
               } as PredictionNodeData;
+              // Mark constructed object as a market-origin object so downstream panels hide prediction-only UI
+              (constructedFromMarket as any).isMarket = true;
               matchingPrediction = constructedFromMarket as any;
             }
           } catch (e) {
@@ -1435,23 +1440,32 @@ const Index = () => {
                   {loadingMarkets && <span className="ml-2 text-[10px] text-muted-foreground">(Loading markets...)</span>}
                 </span>
                 <div className="flex items-center gap-3">
-                  {/* Dashboard decision filter controls */}
-                  <div className="flex items-center gap-2">
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                     <button
-                      onClick={() => { setDecisionFilter('all'); if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('mira-decision-filter', { detail: 'all' })); }}
-                      className="px-2 py-1 text-[11px] font-bold rounded bg-[rgba(255,255,255,0.03)] text-muted-foreground border border-[rgba(255,255,255,0.06)]"
-                    >All</button>
+                      onClick={() => setBubbleViewMode('predictions')}
+                      aria-pressed={bubbleViewMode === 'predictions'}
+                      className="text-xs px-2 py-1 rounded-full"
+                      style={{
+                        background: bubbleViewMode === 'predictions' ? 'white' : 'transparent',
+                        color: bubbleViewMode === 'predictions' ? '#000' : '#fff',
+                        fontWeight: 700,
+                        border: bubbleViewMode === 'predictions' ? 'none' : '1px solid rgba(255,255,255,0.06)'
+                      }}
+                    >Predictions</button>
                     <button
-                      onClick={() => { setDecisionFilter('yes'); if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('mira-decision-filter', { detail: 'yes' })); }}
-                      className="px-2 py-1 text-[11px] font-bold rounded border"
-                      style={{ backgroundColor: 'rgba(0,255,65,0.06)', color: '#00ff41', borderColor: 'rgba(0,255,65,0.12)' }}
-                    >YES</button>
-                    <button
-                      onClick={() => { setDecisionFilter('no'); if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('mira-decision-filter', { detail: 'no' })); }}
-                      className="px-2 py-1 text-[11px] font-bold rounded border"
-                      style={{ backgroundColor: 'rgba(255,0,102,0.06)', color: '#ff0066', borderColor: 'rgba(255,0,102,0.12)' }}
-                    >NO</button>
+                      onClick={() => setBubbleViewMode('markets')}
+                      aria-pressed={bubbleViewMode === 'markets'}
+                      className="text-xs px-2 py-1 rounded-full"
+                      style={{
+                        background: bubbleViewMode === 'markets' ? 'white' : 'transparent',
+                        color: bubbleViewMode === 'markets' ? '#000' : '#fff',
+                        fontWeight: 700,
+                        border: bubbleViewMode === 'markets' ? 'none' : '1px solid rgba(255,255,255,0.06)'
+                      }}
+                    >Markets</button>
                   </div>
+                  {/* Dashboard decision filter controls */}
+                  {/* Decision filter buttons removed (All / YES / NO) */}
 
                   {/* Filters removed per request - replaced markets dropdown above with Yes/No tabs */}
 
@@ -1533,7 +1547,9 @@ const Index = () => {
               >
                 <PredictionBubbleCanvas
                   key={predictionsSignature}
-                  items={displayPredictions}
+                  viewMode={bubbleViewMode}
+                  items={bubbleViewMode === 'predictions' ? displayPredictions : undefined}
+                  searchQuery={debouncedSearchQuery}
                   onBubbleClick={(market) => handleBubbleClick(market)}
                 />
               </div>

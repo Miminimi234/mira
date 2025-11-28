@@ -344,37 +344,39 @@ export const MarketDetailsPanel = ({ market, onClose, onWatchlistChange, watchli
       {/* Content - Scrollable */}
       <div className="flex-1 overflow-y-auto scrollbar-hide p-3 space-y-3" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
         {/* Decision & Bet Placed (uses existing Probability/Price card layout) */}
-        <div className="grid grid-cols-2 gap-2">
-          <div className={`p-3 rounded-lg border-2 ${isYes
-            ? 'bg-trade-yes/10 border-trade-yes/40'
-            : 'bg-trade-no/10 border-trade-no/40'
-            }`}>
-            <div className="text-[10px] text-muted-foreground font-mono mb-1">DECISION</div>
-            <div className={`text-lg font-bold ${isYes ? 'text-trade-yes' : 'text-trade-no'
+        {!((market as any).isMarket) && (
+          <div className="grid grid-cols-2 gap-2">
+            <div className={`p-3 rounded-lg border-2 ${isYes
+              ? 'bg-trade-yes/10 border-trade-yes/40'
+              : 'bg-trade-no/10 border-trade-no/40'
               }`}>
-              {String(agentDecision || market.position)}
+              <div className="text-[10px] text-muted-foreground font-mono mb-1">DECISION</div>
+              <div className={`text-lg font-bold ${isYes ? 'text-trade-yes' : 'text-trade-no'
+                }`}>
+                {String(agentDecision || market.position)}
+              </div>
+              <div className="text-xs text-foreground mt-0.5">
+                Confidence: <span className="font-bold">{formatPercent(confidenceRaw, 1)}</span>
+              </div>
             </div>
-            <div className="text-xs text-foreground mt-0.5">
-              Confidence: <span className="font-bold">{formatPercent(confidenceRaw, 1)}</span>
-            </div>
-          </div>
 
-          <div className="p-3 rounded-lg border border-border bg-secondary/30">
-            <div className="text-[10px] text-muted-foreground font-mono mb-1">BET PLACED</div>
-            <div className="text-lg font-bold text-foreground">
-              {formatCurrency(typeof agentBetRaw === 'number' ? agentBetRaw : Number(agentBetRaw))}
-            </div>
-            <div className="text-xs text-muted-foreground mt-0.5">
-              {market.change !== undefined && (
-                <span className={`flex items-center gap-1 ${market.change >= 0 ? 'text-trade-yes' : 'text-trade-no'
-                  }`}>
-                  {market.change >= 0 ? <TrendingUp className="w-2.5 h-2.5" /> : <TrendingDown className="w-2.5 h-2.5" />}
-                  {formatChange(market.change, 2)}
-                </span>
-              )}
+            <div className="p-3 rounded-lg border border-border bg-secondary/30">
+              <div className="text-[10px] text-muted-foreground font-mono mb-1">BET PLACED</div>
+              <div className="text-lg font-bold text-foreground">
+                {formatCurrency(typeof agentBetRaw === 'number' ? agentBetRaw : Number(agentBetRaw))}
+              </div>
+              <div className="text-xs text-muted-foreground mt-0.5">
+                {market.change !== undefined && (
+                  <span className={`flex items-center gap-1 ${market.change >= 0 ? 'text-trade-yes' : 'text-trade-no'
+                    }`}>
+                    {market.change >= 0 ? <TrendingUp className="w-2.5 h-2.5" /> : <TrendingDown className="w-2.5 h-2.5" />}
+                    {formatChange(market.change, 2)}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Outcomes Section */}
         <div className="p-2.5 rounded-lg border border-border bg-secondary/30">

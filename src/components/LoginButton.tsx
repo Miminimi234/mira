@@ -117,9 +117,19 @@ export const LoginButton = ({
   };
 
   const checkAuthStatus = async () => {
-    // Disabled: avoid making repeated `/api/auth/me` requests from the client.
-    // Will be re-enabled later when server/client flow is stabilized.
-    console.debug('[LoginButton] checkAuthStatus disabled (no-op)');
+    try {
+      const resp = await fetch(`${API_BASE_URL}/api/auth/me`, { credentials: 'include' });
+      if (!resp.ok) {
+        console.debug('[LoginButton] not authenticated');
+        return;
+      }
+      const data = await resp.json();
+      if (data && data.authenticated && data.user && data.user.email) {
+        onLogin?.(data.user.email);
+      }
+    } catch (e) {
+      console.debug('[LoginButton] checkAuthStatus error', e);
+    }
   };
 
   // Check 2FA status when logged in
