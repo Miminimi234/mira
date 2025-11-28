@@ -647,14 +647,32 @@ export const PerformanceChart = ({ predictions = [], selectedMarketId = null, se
   };
 
   const handleHZoomIn = () => {
-    setHorizontalZoom(prev => Math.min(prev * 1.5, 6));
-    // Apply computed width immediately so the chart updates
-    setUserInnerWidthPx(prev => Math.ceil((activeData.length * BASE_POINT_WIDTH) * Math.min(prev ? prev / BASE_POINT_WIDTH : 1, 6)));
+    setHorizontalZoom(prev => {
+      const next = Math.min(prev * 1.5, 6);
+      setUserInnerWidthPx(Math.ceil(activeData.length * BASE_POINT_WIDTH * next));
+      // after zoom, snap to rightmost so latest data stays visible
+      setTimeout(() => {
+        const el = scrollRef.current;
+        if (el) {
+          try { el.scrollTo({ left: Math.max(0, el.scrollWidth - el.clientWidth), behavior: 'smooth' }); } catch (e) { el.scrollLeft = Math.max(0, el.scrollWidth - el.clientWidth); }
+        }
+      }, 50);
+      return next;
+    });
   };
 
   const handleHZoomOut = () => {
-    setHorizontalZoom(prev => Math.max(prev / 1.5, 0.25));
-    setUserInnerWidthPx(prev => Math.ceil((activeData.length * BASE_POINT_WIDTH) * Math.max(prev ? prev / BASE_POINT_WIDTH : 1, 0.25)));
+    setHorizontalZoom(prev => {
+      const next = Math.max(prev / 1.5, 0.25);
+      setUserInnerWidthPx(Math.ceil(activeData.length * BASE_POINT_WIDTH * next));
+      setTimeout(() => {
+        const el = scrollRef.current;
+        if (el) {
+          try { el.scrollTo({ left: Math.max(0, el.scrollWidth - el.clientWidth), behavior: 'smooth' }); } catch (e) { el.scrollLeft = Math.max(0, el.scrollWidth - el.clientWidth); }
+        }
+      }, 50);
+      return next;
+    });
   };
 
   // Generate Y-axis ticks (ensure unique values)

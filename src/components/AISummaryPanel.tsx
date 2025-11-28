@@ -59,11 +59,14 @@ interface AIDecision {
   market: string;
   marketId?: string; // Add marketId for finding the prediction
   imageUrl?: string;
-  decision: "YES" | "NO";
+  decision: string;
   confidence: number;
   reasoning: string; // Truncated for display
   fullReasoning?: string[]; // Full reasoning for expansion
   investmentUsd?: number; // Investment amount
+  bet_amount?: number;
+  expected_payout_display?: number;
+  expected_payout?: number;
   webResearchSummary?: Array<{
     title: string;
     snippet: string;
@@ -74,10 +77,13 @@ interface AIDecision {
     id: string;
     timestamp: Date;
     market: string;
-    decision: "YES" | "NO";
+    decision: string;
     confidence: number;
     reasoning: string;
   }>;
+  positionStatus?: string;
+  pnl?: number;
+  marketResolution?: string;
 }
 
 interface AISummaryPanelProps {
@@ -504,9 +510,43 @@ export const AISummaryPanel = ({ onTradeClick, onDecisionsUpdate, selectedAgentF
             reasoningText = action === 'RESEARCH' ? 'Web research and market analysis' : 'Analysis based on market data';
           }
 
-          const decisionTimestamp = decision.openedAt ? new Date(decision.openedAt) : (decision.timestamp ? new Date(decision.timestamp) : new Date());
-          const rawDecision = decision.decision || decision.side || 'YES';
-          let decisionValue: "YES" | "NO" = (rawDecision === 'YES' || rawDecision === 'NO') ? rawDecision : 'YES';
+          const parseDecisionTimestamp = (d: any) => {
+            if (!d) return new Date();
+            // Prefer canonical createdAt variants if present (ISO string or ms)
+            if (d.createdAt) {
+              const parsed = Date.parse(d.createdAt);
+              if (!isNaN(parsed)) return new Date(parsed);
+            }
+            if (typeof d.createdAtMs === 'number') return new Date(d.createdAtMs);
+            if (typeof d.created_at_ms === 'number') return new Date(d.created_at_ms);
+            if (d.created_at) {
+              const parsed2 = Date.parse(d.created_at);
+              if (!isNaN(parsed2)) return new Date(parsed2);
+            }
+            // fallbacks
+            if (d.openedAt) return new Date(d.openedAt);
+            if (d.timestamp) return new Date(d.timestamp);
+            return new Date();
+          };
+
+          const decisionTimestamp = parseDecisionTimestamp(decision);
+
+          // Extract position status and PnL for display
+          const rawPos = decision.position_status ?? decision.positionStatus ?? decision.raw?.position_status ?? decision.raw?.positionStatus ?? decision.status ?? decision.state ?? undefined;
+          const positionStatus = rawPos !== undefined && rawPos !== null ? String(rawPos).toUpperCase() : undefined;
+
+          let pnlVal: number | undefined = undefined;
+          if (typeof decision.agent_balance_after === 'number' && typeof decision.agent_balance_before === 'number') {
+            pnlVal = Number(decision.agent_balance_after) - Number(decision.agent_balance_before);
+          } else if (typeof decision.pnl === 'number') {
+            pnlVal = decision.pnl;
+          } else if (typeof decision.profit === 'number') {
+            pnlVal = decision.profit;
+          } else if (typeof decision.realized_pnl === 'number') {
+            pnlVal = decision.realized_pnl;
+          }
+          const rawDecision = decision.decision || decision.side || '';
+          let decisionValue: string = String(rawDecision || '').toUpperCase();
 
           // Normalize confidence: backend may send 0-1 floats or 0-100 ints or strings
           const parseConfidence = (c: any) => {
@@ -521,6 +561,32 @@ export const AISummaryPanel = ({ onTradeClick, onDecisionsUpdate, selectedAgentF
           const rawBet = decision.investmentUsd ?? decision.investment ?? decision.bet_amount ?? decision.betAmount ?? decision.bet ?? decision.amount ?? decision.invested ?? decision.volume ?? undefined;
           const normalizedInvestment = (rawBet !== undefined && rawBet !== null) ? (typeof rawBet === 'number' ? rawBet : (isFinite(Number(rawBet)) ? Number(rawBet) : undefined)) : undefined;
           const normalizedBetAmount = decision.bet_amount ?? decision.betAmount ?? decision.bet ?? decision.amount ?? decision.investment ?? undefined;
+          // Normalize expected payout fields (authoritative and display-friendly)
+          const rawExpectedDisplay = decision.expected_payout_display ?? decision.expectedPayoutDisplay ?? decision.expectedPayoutDisplay ?? decision.expected_payout ?? decision.expectedPayout ?? null;
+          const expectedPayoutDisplay = rawExpectedDisplay !== null && rawExpectedDisplay !== undefined && !isNaN(Number(rawExpectedDisplay)) ? Number(rawExpectedDisplay) : undefined;
+          const rawExpectedAuth = decision.expected_payout ?? decision.expectedPayout ?? null;
+          const expectedPayoutAuth = rawExpectedAuth !== null && rawExpectedAuth !== undefined && !isNaN(Number(rawExpectedAuth)) ? Number(rawExpectedAuth) : undefined;
+
+          // Determine market resolution from marketsMap or decision/raw fields
+          const extractMarketResolution = (dec: any) => {
+            // 1) Try marketsMap by marketId
+            try {
+              const mid = dec.marketId || dec.predictionId || dec.market || null;
+              if (mid && marketsMap && marketsMap[mid]) {
+                const m = marketsMap[mid] as any;
+                const candidates = [m.resolution, m.resolution_result, m.resolved_result, m.result, m.outcome, m.winner, m.resolved_outcome, m.resolution_value, m.winner_name];
+                for (const c of candidates) if (c !== undefined && c !== null) return String(c);
+                if (m.resolved === true) return 'YES';
+                if (m.resolved === false) return 'NO';
+              }
+            } catch (e) { /* ignore */ }
+            // 2) fallback to decision raw fields
+            const fallbacks = [dec.resolved_result, dec.resolution, dec.resolved_outcome, dec.outcome, dec.result, dec.winner, dec.resolved];
+            for (const f of fallbacks) if (f !== undefined && f !== null) return String(f);
+            return undefined;
+          };
+
+          const marketResolution = extractMarketResolution(decision);
 
           newDecisions.push({
             id: decision.id || `${agentId}-${decision.marketId}-${index}`,
@@ -533,14 +599,19 @@ export const AISummaryPanel = ({ onTradeClick, onDecisionsUpdate, selectedAgentF
             market: resolveMarketQuestion(decision) || 'Unknown Market',
             marketId: decision.marketId || decision.predictionId || decision.marketId,
             imageUrl: resolvedImg,
-            decision: decisionValue,
+            decision: String(decisionValue).toUpperCase(),
             confidence: parseConfidence(decision.confidence),
             reasoning: reasoningText,
             fullReasoning: reasoningArray,
             // Always include normalized investment / bet fields so downstream consumers (MarketDetailsPanel) see them
             investmentUsd: normalizedInvestment ?? (action === 'TRADE' ? 0 : undefined),
             bet_amount: normalizedBetAmount,
+            expected_payout_display: expectedPayoutDisplay,
+            expected_payout: expectedPayoutAuth,
             raw: decision,
+            positionStatus,
+            pnl: pnlVal,
+            marketResolution: marketResolution,
             webResearchSummary: Array.isArray(decision.webResearchSummary) ? decision.webResearchSummary : [],
             decisionHistory: [],
           });
@@ -732,9 +803,24 @@ export const AISummaryPanel = ({ onTradeClick, onDecisionsUpdate, selectedAgentF
                 {(() => {
                   try {
                     const bal = agentBalancesMap[selectedAgentFilter];
-                    const gross = bal?.gross_balance ?? bal?.balance?.gross_balance ?? bal?.current_balance ?? null;
-                    if (gross == null || isNaN(Number(gross))) return '$—';
-                    return `$${(Math.round(Number(gross) * 100) / 100).toFixed(2)}`;
+                    if (!bal) return '$—';
+
+                    const parseNum = (v: any) => {
+                      if (v === undefined || v === null) return NaN;
+                      if (typeof v === 'number') return v;
+                      const n = Number(v);
+                      return isNaN(n) ? NaN : n;
+                    };
+
+                    const currentBalance = parseNum(bal?.current_balance ?? bal?.currentBalance ?? bal?.balance?.current_balance ?? bal?.balance?.currentBalance ?? bal?.gross_balance ?? bal?.balance?.gross_balance ?? bal?.balance ?? bal?.starting_balance ?? 0);
+                    const currentPnl = parseNum(bal?.current_pnl ?? bal?.currentPnl ?? bal?.currentPnlValue ?? bal?.pnl ?? bal?.profit ?? 0);
+
+                    const balanceVal = isNaN(currentBalance) ? 0 : currentBalance;
+                    const pnlVal = isNaN(currentPnl) ? 0 : currentPnl;
+
+                    const sum = balanceVal + pnlVal;
+                    if (sum == null || isNaN(Number(sum))) return '$—';
+                    return `$${(Math.round(Number(sum) * 100) / 100).toFixed(2)}`;
                   } catch (e) { return '$—'; }
                 })()}
               </div>
@@ -888,6 +974,38 @@ export const AISummaryPanel = ({ onTradeClick, onDecisionsUpdate, selectedAgentF
                           </span>
                         </div>
                         <div className="flex items-center gap-2">
+                          {!decision.marketResolution && decision.positionStatus && (
+                            <div className={`px-2 py-0.5 rounded-lg text-[11px] font-mono uppercase ${decision.positionStatus === 'CLOSED'
+                              ? 'bg-trade-no/20 text-trade-no border border-trade-no/30'
+                              : 'bg-trade-yes/20 text-trade-yes border border-trade-yes/30'
+                              }`}>
+                              {decision.positionStatus === 'CLOSED' ? 'CLOSED' : 'OPEN'}
+                            </div>
+                          )}
+
+                          {/* When closed, show an explicit labeled payout next to the status badge */}
+                          {decision.positionStatus === 'CLOSED' && (decision.expected_payout ?? decision.expected_payout_display) !== undefined && (decision.expected_payout ?? decision.expected_payout_display) !== null && (
+                            <div className="ml-2 flex items-baseline gap-2">
+                              <div className="text-[10px] text-muted-foreground font-mono uppercase" style={{ fontWeight: 700 }}>Payout</div>
+                              <div className={`text-[12px] font-mono text-trade-yes`} style={{ fontWeight: 600 }}>
+                                ${Number(decision.expected_payout ?? decision.expected_payout_display).toFixed(2)}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Only show PnL on header when CLOSED and no expected payout is available */}
+                          {(decision.positionStatus === 'CLOSED' && (decision.expected_payout === undefined || decision.expected_payout === null) && typeof decision.pnl === 'number') ? (
+                            <div className={`text-[12px] font-mono ${decision.pnl >= 0 ? 'text-trade-yes' : 'text-trade-no'}`} style={{ fontWeight: 600 }}>
+                              {decision.pnl >= 0 ? '+' : '-'}${Math.abs(Math.round((decision.pnl ?? 0) * 100) / 100).toFixed(2)}
+                            </div>
+                          ) : null}
+
+                          {decision.marketResolution && (
+                            <div className={`px-2 py-0.5 rounded-lg text-[11px] font-mono uppercase bg-muted/10 text-muted-foreground border border-border/20`}>
+                              {`Closed on ${String(decision.marketResolution)}`}
+                            </div>
+                          )}
+
                           <span className="text-[11px] text-muted-foreground font-mono">
                             {formatTimeAgo(decision.timestamp)}
                           </span>
@@ -910,19 +1028,33 @@ export const AISummaryPanel = ({ onTradeClick, onDecisionsUpdate, selectedAgentF
                           }`}>
                           {decision.action}
                         </div>
-                        {decision.action === "TRADE" && (
-                          <div className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-mono font-bold ${decision.decision === "YES"
-                            ? "bg-trade-yes/20 text-trade-yes border border-trade-yes/30"
-                            : "bg-trade-no/20 text-trade-no border border-trade-no/30"
-                            }`}>
-                            {decision.decision === "YES" ? (
-                              <TrendingUp className="w-2.5 h-2.5" />
-                            ) : (
-                              <TrendingDown className="w-2.5 h-2.5" />
-                            )}
-                            {decision.decision}
-                          </div>
-                        )}
+                        {decision.action === "TRADE" && (() => {
+                          const dec = (decision.decision || '').toString().toUpperCase();
+                          const isYes = dec === 'YES';
+                          const isNo = dec === 'NO';
+                          const isUp = dec === 'UP';
+                          const isDown = dec === 'DOWN';
+
+                          let badgeClass = 'bg-trade-other/20 text-trade-other border border-trade-other/30';
+                          if (isYes) badgeClass = 'bg-trade-yes/20 text-trade-yes border border-trade-yes/30';
+                          else if (isNo) badgeClass = 'bg-trade-no/20 text-trade-no border border-trade-no/30';
+                          else if (isUp) badgeClass = 'bg-trade-up/20 text-trade-up border border-trade-up/30';
+                          else if (isDown) badgeClass = 'bg-trade-down/20 text-trade-down border border-trade-down/30';
+
+                          const Icon = isYes || isUp ? TrendingUp : (isNo || isDown ? TrendingDown : Globe);
+
+                          return (
+                            <div className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-mono font-bold ${badgeClass}`}>
+                              <Icon className="w-2.5 h-2.5" />
+                              {decision.decision}
+                              {(decision.positionStatus !== 'OPEN') && (decision.bet_amount || decision.investmentUsd) && (
+                                <span className="ml-2 text-[11px] font-mono text-muted-foreground" style={{ fontWeight: 600 }}>
+                                  ${Number(decision.bet_amount ?? decision.investmentUsd).toFixed(0)}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       {/* Market - Clickable to open market details */}
@@ -1009,17 +1141,28 @@ export const AISummaryPanel = ({ onTradeClick, onDecisionsUpdate, selectedAgentF
                               </div>
                               <div className="bg-bg-elevated border border-terminal-accent/30 rounded-lg p-3">
                                 <div className="flex items-center gap-2 mb-2">
-                                  <div className={`px-2 py-1 rounded-lg text-[12px] font-mono font-bold ${decision.decision === "YES"
-                                    ? "bg-trade-yes/20 text-trade-yes border border-trade-yes/30"
-                                    : "bg-trade-no/20 text-trade-no border border-trade-no/30"
-                                    }`}>
-                                    {decision.decision === "YES" ? (
-                                      <TrendingUp className="w-3 h-3 inline mr-1" />
-                                    ) : (
-                                      <TrendingDown className="w-3 h-3 inline mr-1" />
-                                    )}
-                                    {decision.decision} @ {decision.confidence}% confidence
-                                  </div>
+                                  {(() => {
+                                    const dec = (decision.decision || '').toString().toUpperCase();
+                                    const isYes = dec === 'YES';
+                                    const isNo = dec === 'NO';
+                                    const isUp = dec === 'UP';
+                                    const isDown = dec === 'DOWN';
+
+                                    let badgeClass = 'bg-trade-other/20 text-trade-other border border-trade-other/30';
+                                    if (isYes) badgeClass = 'bg-trade-yes/20 text-trade-yes border border-trade-yes/30';
+                                    if (isNo) badgeClass = 'bg-trade-no/20 text-trade-no border border-trade-no/30';
+                                    if (isUp) badgeClass = 'bg-trade-up/20 text-trade-up border border-trade-up/30';
+                                    if (isDown) badgeClass = 'bg-trade-down/20 text-trade-down border border-trade-down/30';
+
+                                    const Icon = isYes || isUp ? TrendingUp : TrendingDown;
+
+                                    return (
+                                      <div className={`px-2 py-1 rounded-lg text-[12px] font-mono font-bold ${badgeClass}`}>
+                                        <Icon className="w-3 h-3 inline mr-1" />
+                                        {decision.decision} @ {decision.confidence}% confidence
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
                                 <div className="text-[12px] text-text-secondary leading-relaxed">
                                   {decision.fullReasoning && decision.fullReasoning.length > 0 ? (

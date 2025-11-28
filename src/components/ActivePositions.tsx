@@ -169,6 +169,15 @@ export const ActivePositions = ({ agents, selectedAgent, onAgentClick }: ActiveP
 
   const displayAgents = (agents && agents.length > 0) ? agents : internalAgents;
 
+  // Sum of agent PnL percentages from balances (preferred) or fallback to agent.pnl
+  const normalizeKey = (s: any) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const totalPnlPercFromAgents = displayAgents.reduce((sum, agent) => {
+    const key = normalizeKey(agent.id);
+    const v = (agentPnlPercMap && agentPnlPercMap[key] != null) ? Number(agentPnlPercMap[key]) : Number(agent.pnl || 0);
+    return sum + (isNaN(v) ? 0 : v);
+  }, 0);
+  const roundedTotalPnlPercFromAgents = Math.round(totalPnlPercFromAgents * 10) / 10; // one decimal place
+
   // Calculate metrics
   const totalPnL = displayAgents.reduce((sum, agent) => sum + (agent.pnl || 0), 0);
   const totalMarkets = displayAgents.reduce((sum, agent) => sum + (agent.openMarkets || 0), 0);
@@ -206,8 +215,8 @@ export const ActivePositions = ({ agents, selectedAgent, onAgentClick }: ActiveP
               <div className="text-[9px] text-text-muted font-mono uppercase tracking-[0.08em] mb-0.5" style={{ fontWeight: 600 }}>
                 TOTAL P&L
               </div>
-              <div className={`text-lg font-bold ${(footerTotalPercent ?? totalPnL) >= 0 ? 'text-trade-yes' : 'text-trade-no'}`} style={{ fontWeight: 700 }}>
-                {((footerTotalPercent != null) ? (footerTotalPercent >= 0 ? '+' : '') + footerTotalPercent.toFixed(1) + '%' : (totalPnL >= 0 ? '+' : '') + totalPnL.toFixed(1) + '%')}
+              <div className={`text-lg font-bold ${roundedTotalPnlPercFromAgents >= 0 ? 'text-trade-yes' : 'text-trade-no'}`} style={{ fontWeight: 700 }}>
+                {(roundedTotalPnlPercFromAgents >= 0 ? '+' : '') + roundedTotalPnlPercFromAgents.toFixed(1) + '%'}
               </div>
             </div>
 

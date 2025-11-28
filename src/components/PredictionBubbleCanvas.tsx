@@ -56,6 +56,13 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
     // makes images brighter/less obscured behind the frosted overlay.
     const IMAGE_OVERLAY_OPACITY = 0.22; // reduced from 0.45 for clearer visuals
 
+    // Normalize confidence/probability values to 0-100 integers like AISummaryPanel.parseConfidence
+    const normalizeConfidence = (c: any) => {
+        const num = (typeof c === 'number') ? c : (c ? Number(c) : 0);
+        if (isNaN(num)) return 0;
+        if (Math.abs(num) <= 1) return Math.round(num * 100);
+        return Math.round(num);
+    };
     // Subscribe to Firebase `predictions` and show only agent predictions.
     // If a `items` prop is provided (e.g. Landing page API fetch), prefer that
     // and skip the realtime subscription so the background can render.
@@ -70,6 +77,7 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
                     const imageUrl = p.image_url || p.imageUrl || p.market_image || p.market_image_url || p.marketImage || p.image || p.thumb || p.logo || null;
                     const rawMarketTitle = p.marketQuestion || p.market_question || p.title || p.question || p.market || '';
                     const decision = p.decision || p.side || p.position || (typeof p.probability === 'number' ? (p.probability >= 50 ? 'YES' : 'NO') : null);
+                    const prob = normalizeConfidence(p.probability ?? p.confidence ?? p.price ?? null);
                     const amount = (p.bet_amount != null) ? p.bet_amount : (p.betAmount != null ? p.betAmount : (p.investmentUsd || p.investment || p.amount || p.invested || p.volume || 0));
                     return {
                         id: p.id || p.predictionId || p._id || JSON.stringify(p),
@@ -77,7 +85,7 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
                         imageUrl,
                         volume: Number(p.volume || 0),
                         marketId: p.marketId || p.market_id || p.market || null,
-                        probability: p.probability ?? null,
+                        probability: prob,
                         decision,
                         investmentUsd: amount,
                         agentId: p.agentId || p.agent || null,
@@ -130,6 +138,7 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
                         // Prefer agent prediction fields: marketQuestion/marketId, decision, bet_amount
                         const rawMarketTitle = p.marketQuestion || p.market_question || p.title || p.question || p.market || '';
                         const decision = p.decision || p.side || p.position || (typeof p.probability === 'number' ? (p.probability >= 50 ? 'YES' : 'NO') : null);
+                        const prob = normalizeConfidence(p.probability ?? p.confidence ?? p.price ?? p.raw?.confidence ?? p.raw?.probability ?? null);
                         const amount = (p.bet_amount != null) ? p.bet_amount : (p.betAmount != null ? p.betAmount : (p.investmentUsd || p.investment || p.amount || p.invested || p.volume || 0));
 
                         // Helper: attempt to extract a numeric market id from various candidate fields
@@ -175,7 +184,7 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
                             imageUrl,
                             volume: Number(p.volume || 0),
                             marketId: resolvedMarketId || (p.marketId || p.market_id || p.market) || null,
-                            probability: p.probability ?? null,
+                            probability: prob,
                             decision,
                             investmentUsd: amount,
                             agentId: p.agentId || p.agent || null,
@@ -334,6 +343,49 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
             f2.append('feComposite').attr('in', 'color').attr('in2', 'innerGlow').attr('operator', 'in').attr('result', 'coloredGlow');
             f2.append('feBlend').attr('in', 'SourceGraphic').attr('in2', 'coloredGlow').attr('mode', 'normal');
         }
+        // Blue (UP) and Yellow (DOWN) and Pink (OTHER) inner/outer glow filters
+        if (defs.select('#innerGlowBlue').empty()) {
+            const f = defs.append('filter')
+                .attr('id', 'innerGlowBlue')
+                .attr('filterUnits', 'userSpaceOnUse')
+                .attr('x', '-50%')
+                .attr('y', '-50%')
+                .attr('width', '200%')
+                .attr('height', '200%');
+            f.append('feGaussianBlur').attr('in', 'SourceAlpha').attr('stdDeviation', 4).attr('result', 'blur');
+            f.append('feComposite').attr('in', 'blur').attr('in2', 'SourceAlpha').attr('operator', 'arithmetic').attr('k2', -1).attr('k3', 1).attr('result', 'innerGlow');
+            f.append('feFlood').attr('flood-color', '#4EB5FF').attr('flood-opacity', 0.9).attr('result', 'color');
+            f.append('feComposite').attr('in', 'color').attr('in2', 'innerGlow').attr('operator', 'in').attr('result', 'coloredGlow');
+            f.append('feBlend').attr('in', 'SourceGraphic').attr('in2', 'coloredGlow').attr('mode', 'normal');
+        }
+        if (defs.select('#innerGlowYellow').empty()) {
+            const f = defs.append('filter')
+                .attr('id', 'innerGlowYellow')
+                .attr('filterUnits', 'userSpaceOnUse')
+                .attr('x', '-50%')
+                .attr('y', '-50%')
+                .attr('width', '200%')
+                .attr('height', '200%');
+            f.append('feGaussianBlur').attr('in', 'SourceAlpha').attr('stdDeviation', 4).attr('result', 'blur');
+            f.append('feComposite').attr('in', 'blur').attr('in2', 'SourceAlpha').attr('operator', 'arithmetic').attr('k2', -1).attr('k3', 1).attr('result', 'innerGlow');
+            f.append('feFlood').attr('flood-color', '#FFC94A').attr('flood-opacity', 0.9).attr('result', 'color');
+            f.append('feComposite').attr('in', 'color').attr('in2', 'innerGlow').attr('operator', 'in').attr('result', 'coloredGlow');
+            f.append('feBlend').attr('in', 'SourceGraphic').attr('in2', 'coloredGlow').attr('mode', 'normal');
+        }
+        if (defs.select('#innerGlowPink').empty()) {
+            const f = defs.append('filter')
+                .attr('id', 'innerGlowPink')
+                .attr('filterUnits', 'userSpaceOnUse')
+                .attr('x', '-50%')
+                .attr('y', '-50%')
+                .attr('width', '200%')
+                .attr('height', '200%');
+            f.append('feGaussianBlur').attr('in', 'SourceAlpha').attr('stdDeviation', 4).attr('result', 'blur');
+            f.append('feComposite').attr('in', 'blur').attr('in2', 'SourceAlpha').attr('operator', 'arithmetic').attr('k2', -1).attr('k3', 1).attr('result', 'innerGlow');
+            f.append('feFlood').attr('flood-color', '#FF66B3').attr('flood-opacity', 0.9).attr('result', 'color');
+            f.append('feComposite').attr('in', 'color').attr('in2', 'innerGlow').attr('operator', 'in').attr('result', 'coloredGlow');
+            f.append('feBlend').attr('in', 'SourceGraphic').attr('in2', 'coloredGlow').attr('mode', 'normal');
+        }
         // Outer glow filters (drop-shadow style) for bubbles
         if (defs.select('#bubbleGlowGreen').empty()) {
             const g = defs.append('filter')
@@ -375,6 +427,63 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
             g2.append('feMerge').append('feMergeNode').attr('in', 'coloredOuter');
             g2.select('feMerge').append('feMergeNode').attr('in', 'coloredInner');
             g2.select('feMerge').append('feMergeNode').attr('in', 'SourceGraphic');
+        }
+        if (defs.select('#bubbleGlowBlue').empty()) {
+            const g = defs.append('filter')
+                .attr('id', 'bubbleGlowBlue')
+                .attr('filterUnits', 'userSpaceOnUse')
+                .attr('x', '-50%')
+                .attr('y', '-50%')
+                .attr('width', '200%')
+                .attr('height', '200%');
+            g.append('feGaussianBlur').attr('in', 'SourceAlpha').attr('stdDeviation', 6).attr('result', 'blurOuter');
+            g.append('feFlood').attr('flood-color', '#4EB5FF').attr('flood-opacity', 0.85).attr('result', 'colorOuter');
+            g.append('feComposite').attr('in', 'colorOuter').attr('in2', 'blurOuter').attr('operator', 'in').attr('result', 'coloredOuter');
+            g.append('feGaussianBlur').attr('in', 'SourceAlpha').attr('stdDeviation', 2).attr('result', 'blurInner');
+            g.append('feComposite').attr('in', 'blurInner').attr('in2', 'SourceAlpha').attr('operator', 'arithmetic').attr('k2', -1).attr('k3', 1).attr('result', 'innerGlow');
+            g.append('feFlood').attr('flood-color', '#4EB5FF').attr('flood-opacity', 1.0).attr('result', 'colorInner');
+            g.append('feComposite').attr('in', 'colorInner').attr('in2', 'innerGlow').attr('operator', 'in').attr('result', 'coloredInner');
+            g.append('feMerge').append('feMergeNode').attr('in', 'coloredOuter');
+            g.select('feMerge').append('feMergeNode').attr('in', 'coloredInner');
+            g.select('feMerge').append('feMergeNode').attr('in', 'SourceGraphic');
+        }
+        if (defs.select('#bubbleGlowYellow').empty()) {
+            const g = defs.append('filter')
+                .attr('id', 'bubbleGlowYellow')
+                .attr('filterUnits', 'userSpaceOnUse')
+                .attr('x', '-50%')
+                .attr('y', '-50%')
+                .attr('width', '200%')
+                .attr('height', '200%');
+            g.append('feGaussianBlur').attr('in', 'SourceAlpha').attr('stdDeviation', 6).attr('result', 'blurOuter');
+            g.append('feFlood').attr('flood-color', '#FFC94A').attr('flood-opacity', 0.85).attr('result', 'colorOuter');
+            g.append('feComposite').attr('in', 'colorOuter').attr('in2', 'blurOuter').attr('operator', 'in').attr('result', 'coloredOuter');
+            g.append('feGaussianBlur').attr('in', 'SourceAlpha').attr('stdDeviation', 2).attr('result', 'blurInner');
+            g.append('feComposite').attr('in', 'blurInner').attr('in2', 'SourceAlpha').attr('operator', 'arithmetic').attr('k2', -1).attr('k3', 1).attr('result', 'innerGlow');
+            g.append('feFlood').attr('flood-color', '#FFC94A').attr('flood-opacity', 1.0).attr('result', 'colorInner');
+            g.append('feComposite').attr('in', 'colorInner').attr('in2', 'innerGlow').attr('operator', 'in').attr('result', 'coloredInner');
+            g.append('feMerge').append('feMergeNode').attr('in', 'coloredOuter');
+            g.select('feMerge').append('feMergeNode').attr('in', 'coloredInner');
+            g.select('feMerge').append('feMergeNode').attr('in', 'SourceGraphic');
+        }
+        if (defs.select('#bubbleGlowPink').empty()) {
+            const g = defs.append('filter')
+                .attr('id', 'bubbleGlowPink')
+                .attr('filterUnits', 'userSpaceOnUse')
+                .attr('x', '-50%')
+                .attr('y', '-50%')
+                .attr('width', '200%')
+                .attr('height', '200%');
+            g.append('feGaussianBlur').attr('in', 'SourceAlpha').attr('stdDeviation', 6).attr('result', 'blurOuter');
+            g.append('feFlood').attr('flood-color', '#FF66B3').attr('flood-opacity', 0.85).attr('result', 'colorOuter');
+            g.append('feComposite').attr('in', 'colorOuter').attr('in2', 'blurOuter').attr('operator', 'in').attr('result', 'coloredOuter');
+            g.append('feGaussianBlur').attr('in', 'SourceAlpha').attr('stdDeviation', 2).attr('result', 'blurInner');
+            g.append('feComposite').attr('in', 'blurInner').attr('in2', 'SourceAlpha').attr('operator', 'arithmetic').attr('k2', -1).attr('k3', 1).attr('result', 'innerGlow');
+            g.append('feFlood').attr('flood-color', '#FF66B3').attr('flood-opacity', 1.0).attr('result', 'colorInner');
+            g.append('feComposite').attr('in', 'colorInner').attr('in2', 'innerGlow').attr('operator', 'in').attr('result', 'coloredInner');
+            g.append('feMerge').append('feMergeNode').attr('in', 'coloredOuter');
+            g.select('feMerge').append('feMergeNode').attr('in', 'coloredInner');
+            g.select('feMerge').append('feMergeNode').attr('in', 'SourceGraphic');
         }
 
         // Simple collision resolver (iterative) to avoid overlaps without running a force simulation
@@ -424,10 +533,27 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
 
         // ENTER
         const enter = sel.enter().append('g').attr('class', 'pred-node').attr('data-id', (d: any) => key(d));
-        // Color bubbles by decision when available (YES -> positive, NO -> negative), otherwise fall back to change sign
+        // Color bubbles by decision when available. Map to classes: yes/no/up/down/other
         enter.append('circle')
-            .attr('class', (d: any) => 'bubble ' + ((d.decision === 'YES') ? 'positive' : (d.decision === 'NO' ? 'negative' : (((d.change ?? 0) >= 0) ? 'positive' : 'negative'))))
-            .attr('r', (d: any) => d.r);
+            .attr('class', (d: any) => {
+                const raw = String((d.decision || d.position || d.raw?.decision || d.raw?.side || '') || '').toUpperCase();
+                if (raw === 'YES' || raw.startsWith('Y')) return 'bubble yes';
+                if (raw === 'NO' || raw.startsWith('N')) return 'bubble no';
+                if (raw === 'UP') return 'bubble up';
+                if (raw === 'DOWN') return 'bubble down';
+                // fallback to change sign if no explicit decision
+                if ((d.change ?? 0) >= 0) return 'bubble yes';
+                return 'bubble other';
+            })
+            .attr('r', (d: any) => d.r)
+            .attr('stroke', (d: any) => {
+                const raw = String((d.decision || d.position || d.raw?.decision || d.raw?.side || '') || '').toUpperCase();
+                if (raw === 'YES' || raw.startsWith('Y')) return 'hsl(var(--trade-yes))';
+                if (raw === 'NO' || raw.startsWith('N')) return 'hsl(var(--trade-no))';
+                if (raw === 'UP') return 'hsl(var(--trade-up))';
+                if (raw === 'DOWN') return 'hsl(var(--trade-down))';
+                return 'hsl(var(--trade-other))';
+            });
         // Three-line label: decision (YES/NO) above, amount ($) in the middle, title last below
         enter.append('text').attr('class', 'decision').text((d: any) => getDecisionLabel(d));
         enter.append('text').attr('class', 'amount').text((d: any) => getAmountLabel(d));
@@ -459,24 +585,137 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
                 d3.select(this).select('circle').style('cursor', null);
             });
 
-        merged.call(drag as any).on('click', function (event: any, d: any) { event.stopPropagation(); onBubbleClick?.(d); });
+        merged.call(drag as any).on('click', function (event: any, d: any) {
+            event.stopPropagation();
+            try {
+                // Normalize node shape to the canonical PredictionNodeData used elsewhere
+                const sd: any = d || {};
+                const confidenceVal = sd.probability ?? sd.price ?? sd.raw?.confidence ?? sd.raw?.probability ?? sd.raw?.price ?? undefined;
+                const normalizedProb = normalizeConfidence(confidenceVal);
+                const constructed: any = {
+                    id: sd.marketId || sd.id || String(sd.id || sd.market || sd.marketId || ''),
+                    question: sd.market || sd.question || sd.raw?.marketQuestion || sd.raw?.market || sd.raw?.title || 'Unknown Market',
+                    probability: normalizedProb,
+                    position: (sd.decision === 'YES' || sd.position === 'YES') ? 'YES' : ((sd.decision === 'NO' || sd.position === 'NO') ? 'NO' : (sd.position || 'YES')),
+                    price: normalizedProb,
+                    change: sd.change ?? sd.raw?.change ?? 0,
+                    agentName: sd.agentName || sd.raw?.agentName || sd.raw?.agent || '',
+                    agentEmoji: sd.agentEmoji || sd.raw?.agentEmoji || sd.raw?.agent_emoji || '',
+                    reasoning: sd.reasoning || (Array.isArray(sd.fullReasoning) ? sd.fullReasoning.join(' ') : sd.raw?.reasoning || ''),
+                    category: sd.category || sd.raw?.category || undefined,
+                    marketSlug: sd.marketSlug || sd.raw?.slug || sd.raw?.marketSlug || undefined,
+                    conditionId: sd.conditionId || sd.raw?.conditionId || undefined,
+                    imageUrl: sd.imageUrl || sd.image || sd.raw?.imageUrl || sd.raw?.image || undefined,
+                    createdAt: sd.createdAt || sd.raw?.createdAt || sd.raw?.created_at || undefined,
+                    endDate: sd.endDate || sd.raw?.endDate || sd.raw?.end_date || sd.raw?.ends_at || undefined,
+                    startDate: sd.startDate || sd.raw?.startDate || sd.raw?.start_date || sd.raw?.starts_at || undefined,
+                    volume: sd.volume ?? sd.raw?.volume ?? sd.raw?.volume24h ?? sd.raw?.marketVolume ?? undefined,
+                    liquidity: sd.liquidity ?? sd.raw?.liquidity ?? 0,
+                    predicted: true,
+                };
+                // Attach agent-specific bet fields so MarketDetailsPanel can display them
+                constructed.bet_amount = sd.bet_amount ?? sd.raw?.bet_amount ?? sd.investmentUsd ?? sd.raw?.investmentUsd ?? sd.raw?.bet ?? sd.raw?.amount ?? undefined;
+                constructed.investmentUsd = sd.investmentUsd ?? sd.raw?.investmentUsd ?? sd.bet_amount ?? sd.raw?.bet_amount ?? undefined;
+                constructed.decision = sd.decision ?? sd.position ?? sd.raw?.decision ?? sd.raw?.side ?? undefined;
+
+                // If markets map contains a canonical market entry for this id/slug, copy canonical fields
+                try {
+                    // Try multiple candidate keys (ids, slugs, market, predictionId, nested raw values)
+                    const candidates = [
+                        sd.marketId,
+                        sd.market,
+                        sd.raw?.marketId,
+                        sd.raw?.market,
+                        sd.raw?.predictionId,
+                        sd.id,
+                        sd.raw?.id,
+                        sd.marketSlug,
+                        sd.raw?.slug,
+                        sd.raw?.marketSlug,
+                        sd.raw?.conditionId,
+                    ].filter(Boolean).map(String);
+
+                    let marketEntry: any = null;
+                    for (const c of candidates) {
+                        // try exact lookup
+                        const found = getMarketEntry(c);
+                        if (found) {
+                            marketEntry = found; break;
+                        }
+                        // try extracting a numeric id sequence (some keys include prefixes)
+                        const m = c.match(/(\d{3,})/);
+                        if (m && m[1]) {
+                            const found2 = getMarketEntry(m[1]);
+                            if (found2) { marketEntry = found2; break; }
+                        }
+                    }
+
+                    if (marketEntry) {
+                        // Prefer canonical numeric volume fields; coerce to numbers when possible
+                        const toNum = (v: any) => {
+                            if (v === undefined || v === null) return undefined;
+                            if (typeof v === 'number' && isFinite(v)) return v;
+                            const n = Number(v);
+                            return isFinite(n) ? n : undefined;
+                        };
+
+                        const v = toNum(marketEntry.volume ?? marketEntry.total_volume ?? marketEntry.volume_all_time ?? marketEntry.volume_all ?? marketEntry.totalVolume);
+                        if (v !== undefined) constructed.volume = constructed.volume ?? v;
+
+                        const v24 = toNum(marketEntry.volume24h ?? marketEntry.volume_24h ?? marketEntry.volume_24hr ?? marketEntry.volume24 ?? marketEntry.volume_24hrs);
+                        if (v24 !== undefined) constructed.volume24h = constructed.volume24h ?? v24;
+
+                        const tot = toNum(marketEntry.total_volume ?? marketEntry.volume_all_time ?? marketEntry.volume_all ?? marketEntry.totalVolume);
+                        if (tot !== undefined) constructed.total_volume = constructed.total_volume ?? tot;
+
+                        const volAll = toNum(marketEntry.volume_all_time ?? marketEntry.volume_all ?? marketEntry.total_volume);
+                        if (volAll !== undefined) constructed.volume_all_time = constructed.volume_all_time ?? volAll;
+
+                        constructed.liquidity = constructed.liquidity ?? (toNum(marketEntry.liquidity) ?? toNum(marketEntry.liquidity_amount));
+                        constructed.yesPrice = constructed.yesPrice ?? (marketEntry.yes_price ?? marketEntry.yesPrice ?? marketEntry.yesPrice);
+                        constructed.noPrice = constructed.noPrice ?? (marketEntry.no_price ?? marketEntry.noPrice ?? marketEntry.noPrice);
+                        constructed.outcomes = constructed.outcomes ?? marketEntry.outcomes ?? constructed.outcomes;
+                        constructed.createdAt = constructed.createdAt ?? (marketEntry.created_at ?? marketEntry.createdAt ?? constructed.createdAt);
+                        constructed.endDate = constructed.endDate ?? (marketEntry.end_date ?? marketEntry.ends_at ?? marketEntry.endDate ?? constructed.endDate);
+                        constructed.marketSlug = constructed.marketSlug ?? (marketEntry.slug ?? marketEntry.marketSlug ?? constructed.marketSlug);
+                        constructed.conditionId = constructed.conditionId ?? (marketEntry.conditionId ?? marketEntry.condition_id ?? constructed.conditionId);
+                    }
+                } catch (e) { /* ignore */ }
+
+                onBubbleClick?.(constructed as any);
+            } catch (e) {
+                try { onBubbleClick?.(d); } catch (err) { /* ignore */ }
+            }
+        });
 
         // set initial / updated positions
         merged.attr('transform', (d: any) => `translate(${d.x},${d.y})`);
 
-        // Update circle class on enter+update so YES/NO coloring always matches data
+        // Update circle class on enter+update so coloring matches data (yes/no/up/down/other)
         merged.select('circle').attr('class', (d: any) => {
-            const dec = getDecisionLabel(d);
-            if (dec === 'YES') return 'bubble positive';
-            if (dec === 'NO') return 'bubble negative';
-            // fall back to change sign
-            return 'bubble ' + (((d.change ?? 0) >= 0) ? 'positive' : 'negative');
+            const raw = String((d.decision || d.position || d.raw?.decision || d.raw?.side || '') || '').toUpperCase();
+            if (raw === 'YES' || raw.startsWith('Y')) return 'bubble yes';
+            if (raw === 'NO' || raw.startsWith('N')) return 'bubble no';
+            if (raw === 'UP') return 'bubble up';
+            if (raw === 'DOWN') return 'bubble down';
+            if ((d.change ?? 0) >= 0) return 'bubble yes';
+            return 'bubble other';
         }).attr('r', (d: any) => d.r)
+            .attr('stroke', (d: any) => {
+                const raw = String((d.decision || d.position || d.raw?.decision || d.raw?.side || '') || '').toUpperCase();
+                if (raw === 'YES' || raw.startsWith('Y')) return 'hsl(var(--trade-yes))';
+                if (raw === 'NO' || raw.startsWith('N')) return 'hsl(var(--trade-no))';
+                if (raw === 'UP') return 'hsl(var(--trade-up))';
+                if (raw === 'DOWN') return 'hsl(var(--trade-down))';
+                return 'hsl(var(--trade-other))';
+            })
             .attr('filter', (d: any) => {
-                const dec = getDecisionLabel(d);
-                if (dec === 'YES') return 'url(#bubbleGlowGreen)';
-                if (dec === 'NO') return 'url(#bubbleGlowRed)';
-                return null;
+                const raw = String((d.decision || d.position || d.raw?.decision || d.raw?.side || '') || '').toUpperCase();
+                if (raw === 'YES' || raw.startsWith('Y')) return 'url(#bubbleGlowGreen)';
+                if (raw === 'NO' || raw.startsWith('N')) return 'url(#bubbleGlowRed)';
+                if (raw === 'UP') return 'url(#bubbleGlowBlue)';
+                if (raw === 'DOWN') return 'url(#bubbleGlowYellow)';
+                return 'url(#bubbleGlowPink)';
             })
             .attr('stroke-width', 3);
 
@@ -583,10 +822,12 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
             .attr('y', (d: any) => -Math.round((d.r || 24) * 0.18))
             .attr('font-size', (d: any) => Math.max(12, Math.round((d.r || 24) * 0.48)))
             .attr('fill', (d: any) => {
-                const dec = getDecisionLabel(d);
-                if (dec === 'YES') return '#00ff41';
-                if (dec === 'NO') return '#ff0066';
-                return '#ffffff';
+                const raw = String((d.decision || d.position || d.raw?.decision || d.raw?.side || '') || '').toUpperCase();
+                if (raw === 'YES' || raw.startsWith('Y')) return 'hsl(var(--trade-yes))';
+                if (raw === 'NO' || raw.startsWith('N')) return 'hsl(var(--trade-no))';
+                if (raw === 'UP') return 'hsl(var(--trade-up))';
+                if (raw === 'DOWN') return 'hsl(var(--trade-down))';
+                return 'hsl(var(--trade-other))';
             })
             .attr('font-weight', '900')
             .attr('stroke', '#000')
@@ -717,7 +958,7 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
 
     return (
         <div ref={containerRef} style={{ width: "100%", height: "100%", position: "absolute", inset: 0, background: "#000" }}>
-            <style>{`\n                .bubble { cursor:grab; stroke-width:3; transition:all .25s; }\n                .bubble:hover { stroke:white !important; stroke-width:5 !important; }\n                .bubble.positive { stroke:#00ff41; fill:#001a08; }\n                .bubble.negative { stroke:#ff0066; fill:#1a0008; }\n                .symbol { font-weight:900; font-size:14px; fill:white; text-anchor:middle; dominant-baseline:middle; pointer-events:none; }\n                .pct { font-size:12px; fill:white; text-anchor:middle; dominant-baseline:middle; pointer-events:none; }\n                .title { font-weight:800; font-size:12px; fill:white; text-anchor:middle; dominant-baseline:middle; pointer-events:none; }\n                .decision { font-size:16px; text-anchor:middle; dominant-baseline:middle; pointer-events:none; font-weight:900; }\n                .amount { fill:#fff; text-anchor:middle; dominant-baseline:middle; pointer-events:none; font-weight:800; }\n            `}</style>
+            <style>{`\n                .bubble { cursor:grab; stroke-width:3; transition:all .25s; }\n                .bubble:hover { stroke:white !important; stroke-width:5 !important; }\n                .bubble.yes { stroke: hsl(var(--trade-yes)); fill: hsl(var(--trade-yes) / 0.12); }\n                .bubble.no { stroke: hsl(var(--trade-no)); fill: hsl(var(--trade-no) / 0.12); }\n                .bubble.up { stroke: hsl(var(--trade-up)); fill: hsl(var(--trade-up) / 0.12); }\n                .bubble.down { stroke: hsl(var(--trade-down)); fill: hsl(var(--trade-down) / 0.12); }\n                .bubble.other { stroke: hsl(var(--trade-other)); fill: hsl(var(--trade-other) / 0.12); }\n                .symbol { font-weight:900; font-size:14px; fill:white; text-anchor:middle; dominant-baseline:middle; pointer-events:none; }\n                .pct { font-size:12px; fill:white; text-anchor:middle; dominant-baseline:middle; pointer-events:none; }\n                .title { font-weight:800; font-size:12px; fill:white; text-anchor:middle; dominant-baseline:middle; pointer-events:none; }\n                .decision { font-size:16px; text-anchor:middle; dominant-baseline:middle; pointer-events:none; font-weight:900; }\n                .amount { fill:#fff; text-anchor:middle; dominant-baseline:middle; pointer-events:none; font-weight:800; }\n            `}</style>
 
             {showTitle !== false && (
                 <div style={{ position: "absolute", top: 12, left: 16, zIndex: 10, display: 'flex', alignItems: 'center', gap: 12 }}>
