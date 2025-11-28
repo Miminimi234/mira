@@ -15,6 +15,7 @@ export default defineConfig({
     port: Number(process.env.PORT) || 4173,
     allowedHosts: [
       'mira-production-4ba9.up.railway.app',
+      'miramaps.io',
       'localhost',
       '127.0.0.1'
     ],
