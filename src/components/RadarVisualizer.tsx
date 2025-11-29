@@ -37,7 +37,14 @@ export const RadarVisualizer: React.FC<RadarVisualizerProps> = ({ data, agentKey
                         dot={false}
                     />
                 ))}
-                <Tooltip formatter={(value: any) => (typeof value === 'number' ? value.toFixed ? value.toFixed(2) : value : value)} />
+                <Tooltip
+                    formatter={(value: any) => (typeof value === 'number' ? value.toFixed ? value.toFixed(2) : value : value)}
+                    // Style tooltip to have a dark background and light text to match app theme
+                    contentStyle={{ backgroundColor: '#000000', border: '1px solid rgba(255,255,255,0.06)', boxShadow: '0 4px 12px rgba(0,0,0,0.6)', padding: '8px' }}
+                    itemStyle={{ color: '#ffffff', fontSize: 13, padding: '4px 0' }}
+                    labelStyle={{ color: '#9fb0c6', fontSize: 12 }}
+                    wrapperStyle={{ zIndex: 40 }}
+                />
                 {showLegend && <Legend verticalAlign="bottom" wrapperStyle={{ bottom: -8, fontSize: 10 }} />}
             </RadarChart>
         </ResponsiveContainer>
