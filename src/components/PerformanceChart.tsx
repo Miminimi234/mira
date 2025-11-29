@@ -993,7 +993,7 @@ export const PerformanceChart = ({ predictions = [], selectedMarketId = null, se
             <div className="chart-area" style={{ display: 'flex', alignItems: 'stretch', height: chartHeight, position: 'relative' }}>
               {/* Bottom-left zoom controls (moved from header) */}
               {viewMode === 'chart' && (
-                <div style={{ position: 'absolute', left: 12, bottom: 12, zIndex: 120, display: 'flex', gap: 6 }}>
+                <div style={{ position: 'absolute', right: 12, bottom: 12, zIndex: 120, display: 'flex', gap: 6 }}>
                   <div className="flex gap-0.5 items-center bg-[rgba(0,0,0,0.35)] p-1 rounded-md border border-[rgba(255,255,255,0.04)]">
                     <button
                       onClick={handleZoomOut}
