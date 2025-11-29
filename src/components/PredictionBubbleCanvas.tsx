@@ -20,6 +20,13 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
     const containerRef = useRef<HTMLDivElement | null>(null);
     const svgRef = useRef<SVGSVGElement | null>(null);
 
+    // Track transform for pan/zoom applied to the content group
+    const transformRef = useRef<{ scale: number; tx: number; ty: number }>({ scale: 1, tx: 0, ty: 0 });
+    // If user interacts (pan/zoom), disable automatic fit-to-bounds
+    const autoZoomRef = useRef<boolean>(true);
+    // small ref to avoid re-creating handlers
+    const panStartRef = useRef<{ x: number; y: number } | null>(null);
+
     // Maintain a stable nodes map so seeded positions persist across renders
     const nodesRef = useRef<Record<string, any>>({});
     const simRef = useRef<d3.Simulation<any, undefined> | null>(null);
@@ -1029,6 +1036,8 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
                     content.attr('transform', null as any);
                     return;
                 }
+                // If user has manually panned/zoomed, avoid overwriting their view
+                if (!autoZoomRef.current) return;
                 const widthNow = container.clientWidth || window.innerWidth;
                 const heightNow = container.clientHeight || window.innerHeight;
                 let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -1052,8 +1061,8 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
                 const bboxCY = (minY + maxY) / 2;
                 const txNow = (widthNow / 2) - bboxCX * scaleNow;
                 const tyNow = (heightNow / 2) - bboxCY * scaleNow;
-                // Apply transform immediately (no per-tick throttles). Use a short transition
-                // to smooth when node set changes rather than per-tick updates.
+                // Update tracked transform and apply
+                transformRef.current = { scale: scaleNow, tx: txNow, ty: tyNow };
                 try {
                     (content as any).transition().duration(120).attr('transform', `translate(${txNow},${tyNow}) scale(${scaleNow})` as any);
                 } catch (e) {
@@ -1080,6 +1089,52 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
         // schedule initial zoom
         try { scheduleComputeAndApplyZoom(nodes); } catch (e) { }
 
+        // --- Background pan/drag support ---
+        // Insert a transparent rect behind the content group to capture drag events for panning.
+        let bg = svg.select('rect.mira-bg');
+        if (bg.empty()) {
+            bg = svg.insert('rect', 'g.mira-content')
+                .attr('class', 'mira-bg')
+                .attr('x', 0)
+                .attr('y', 0)
+                .attr('width', width)
+                .attr('height', height)
+                .style('fill', 'transparent')
+                .style('cursor', 'grab')
+                .attr('pointer-events', 'all');
+
+            const bgDrag = d3.drag<SVGRectElement, any>()
+                .on('start', function (event) {
+                    // If the original DOM event started on a node (or inside a node),
+                    // don't start panning here to avoid conflicting with node drag.
+                    try {
+                        const se: any = (event as any).sourceEvent;
+                        if (se && se.target) {
+                            const el = (se.target as Element).closest ? (se.target as Element).closest('g.pred-node, circle, .pred-node') : null;
+                            if (el) return; // abort starting background pan
+                        }
+                    } catch (e) { }
+                    try { autoZoomRef.current = false; } catch (e) { }
+                    bg.style('cursor', 'grabbing');
+                    panStartRef.current = { x: event.x, y: event.y };
+                })
+                .on('drag', function (event) {
+                    try {
+                        const s = transformRef.current.scale || 1;
+                        // Adjust translation by delta divided by scale (transform is translate(...) scale(s))
+                        transformRef.current.tx = (transformRef.current.tx || 0) + (event.dx || 0) / s;
+                        transformRef.current.ty = (transformRef.current.ty || 0) + (event.dy || 0) / s;
+                        content.attr('transform', `translate(${transformRef.current.tx},${transformRef.current.ty}) scale(${transformRef.current.scale})`);
+                    } catch (e) { /* ignore */ }
+                })
+                .on('end', function () { bg.style('cursor', 'grab'); panStartRef.current = null; });
+
+            bg.call(bgDrag as any);
+        } else {
+            // Update bg size on re-render
+            bg.attr('width', width).attr('height', height);
+        }
+
         const handleResize = () => {
             const w = window.innerWidth, h = window.innerHeight;
             svg.attr("width", w).attr("height", h).attr("viewBox", `0 0 ${w} ${h}`);
@@ -1099,6 +1154,33 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
         };
     }, [fetchedItems, onBubbleClick]);
 
+    // Helper to apply a transform programmatically (used by zoom buttons)
+    const applyTransform = (scale: number, tx: number, ty: number) => {
+        transformRef.current = { scale, tx, ty };
+        try {
+            const svg = d3.select(svgRef.current as any);
+            const content = svg.select('g.mira-content');
+            if (!content.empty()) content.transition().duration(120).attr('transform', `translate(${tx},${ty}) scale(${scale})` as any);
+        } catch (e) { /* ignore */ }
+    };
+
+    const handleZoom = (factor: number) => {
+        try {
+            autoZoomRef.current = false;
+            const prev = transformRef.current || { scale: 1, tx: 0, ty: 0 };
+            const oldScale = prev.scale || 1;
+            const newScale = Math.max(0.25, Math.min(4, oldScale * factor));
+            const w = containerRef.current ? containerRef.current.clientWidth : window.innerWidth;
+            const h = containerRef.current ? containerRef.current.clientHeight : window.innerHeight;
+            const px = w / 2;
+            const py = h / 2;
+            // Keep viewport center fixed while scaling
+            const tx = prev.tx + px * (1 / newScale - 1 / oldScale);
+            const ty = prev.ty + py * (1 / newScale - 1 / oldScale);
+            applyTransform(newScale, tx, ty);
+        } catch (e) { /* ignore */ }
+    };
+
     return (
         <div ref={containerRef} style={{ width: "100%", height: "100%", position: "absolute", inset: 0, background: "#000" }}>
             <style>{`\n                .bubble { cursor:grab; stroke-width:3; transition:all .25s; }\n                .bubble:hover { stroke:white !important; stroke-width:5 !important; }\n                .bubble.yes { stroke: hsl(var(--trade-yes)); fill: hsl(var(--trade-yes) / 0.12); }\n                .bubble.no { stroke: hsl(var(--trade-no)); fill: hsl(var(--trade-no) / 0.12); }\n                .bubble.up { stroke: hsl(var(--trade-up)); fill: hsl(var(--trade-up) / 0.12); }\n                .bubble.down { stroke: hsl(var(--trade-down)); fill: hsl(var(--trade-down) / 0.12); }\n                .bubble.other { stroke: hsl(var(--trade-other)); fill: hsl(var(--trade-other) / 0.12); }\n                .symbol { font-weight:900; font-size:14px; fill:white; text-anchor:middle; dominant-baseline:middle; pointer-events:none; }\n                .pct { font-size:12px; fill:white; text-anchor:middle; dominant-baseline:middle; pointer-events:none; }\n                .title { font-weight:800; font-size:12px; fill:white; text-anchor:middle; dominant-baseline:middle; pointer-events:none; }\n                .decision { font-size:16px; text-anchor:middle; dominant-baseline:middle; pointer-events:none; font-weight:900; }\n                .amount { fill:#fff; text-anchor:middle; dominant-baseline:middle; pointer-events:none; font-weight:800; }\n            `}</style>
@@ -1108,6 +1190,29 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
                     <div style={{ color: '#fff', fontSize: 18, fontWeight: 800, marginRight: 8 }}>BUBBLE MAP</div>
                 </div>
             )}
+            {/* Zoom controls (top-center) */}
+            <div style={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 30, display: 'flex', gap: 8 }}>
+                <button
+                    title="Zoom Out"
+                    onClick={() => handleZoom(1 / 1.2)}
+                    style={{
+                        background: 'rgba(0,0,0,0.6)', color: '#fff', border: '1px solid rgba(255,255,255,0.06)',
+                        padding: '6px 10px', borderRadius: 6, cursor: 'pointer', fontWeight: 700
+                    }}
+                >
+                    −
+                </button>
+                <button
+                    title="Zoom In"
+                    onClick={() => handleZoom(1.2)}
+                    style={{
+                        background: 'rgba(0,0,0,0.6)', color: '#fff', border: '1px solid rgba(255,255,255,0.06)',
+                        padding: '6px 10px', borderRadius: 6, cursor: 'pointer', fontWeight: 700
+                    }}
+                >
+                    +
+                </button>
+            </div>
             <svg ref={svgRef} style={{ width: "100%", height: "100%" }} />
             {/* Overlay messages for empty/no-data states */}
             {(() => {
