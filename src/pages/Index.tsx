@@ -1497,7 +1497,7 @@ const Index = () => {
                       </button>
                     )}
 
-                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground bg-[rgba(255,255,255,0.02)] px-2 py-0.5 rounded">{(displayPredictions || []).length}/{predictions.length}</span>
+
                   </div>
                 </div>
               </div>

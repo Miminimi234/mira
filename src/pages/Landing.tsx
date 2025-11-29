@@ -115,7 +115,7 @@ const Landing = () => {
         <h1
           className="font-bold tracking-tight"
           style={{
-            fontFamily: "'Boge', sans-serif",
+            fontFamily: "'Work Sans Bold', 'Boge', sans-serif",
             color: '#FFFFFF',
             fontSize: '9rem',
           }}

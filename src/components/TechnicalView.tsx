@@ -1,6 +1,6 @@
-import { listenToAgentBalances } from '@/lib/firebase/listeners';
+import { listenToAgentBalances, listenToAgentPredictions } from '@/lib/firebase/listeners';
 import { useEffect, useState } from "react";
-import { PolarAngleAxis, PolarGrid, Radar, RadarChart, ResponsiveContainer } from "recharts";
+import RadarVisualizer from './RadarVisualizer';
 
 type AgentCard = {
   id: string;
@@ -89,6 +89,8 @@ const AGENT_COLORS: Record<string, string> = {
   QWEN: '#6b9e7d',
 };
 
+
+
 const getAgentLogoKey = (nameOrId?: string) => {
   if (!nameOrId) return undefined;
   const n = String(nameOrId).toUpperCase();
@@ -140,8 +142,10 @@ const tradingActivityData = [
   { metric: "Wins", deepseek: 9, claude: 76, qwen: 81, gemini: 42, grok: 59, gpt5: 15 },
 ];
 
+// Mock risk metrics (used when mocking/simulating). Ensure exposure is shown in dollars to
+// match the AgentCard display.
 const riskMetricsData = [
-  { metric: "Max Exposure", deepseek: 32.05, claude: 63.33, qwen: 31.50, gemini: 50, grok: 40, gpt5: 56.25 },
+  { metric: "Exposure ($)", deepseek: 245.26, claude: 240.93, qwen: 215.44, gemini: 144.99, grok: 0, gpt5: 0 },
   { metric: "P&L Norm.", deepseek: 70, claude: 75, qwen: 45, gemini: 20, grok: 15, gpt5: 5 },
   { metric: "W/L Ratio", deepseek: 39.13, claude: 48.1, qween: 37.0, gemini: 41.58, grok: 42.45, gpt5: 25.0 },
 ];
@@ -201,8 +205,24 @@ const AgentCard = ({ agent, index }: { agent: AgentStats; index: number }) => {
 };
 
 export const TechnicalView = ({ mockAgents, simulate = false }: { mockAgents?: AgentStats[]; simulate?: boolean } = {}) => {
+  const normalizeAgentId = (raw?: string) => {
+    if (!raw) return 'unknown';
+    const s = String(raw).toUpperCase();
+    if (s.includes('DEEPSEEK')) return 'deepseek';
+    if (s.includes('CLAUDE')) return 'claude';
+    if (s.includes('GEMINI')) return 'gemini';
+    if (s.includes('GROK')) return 'grok';
+    if (s.includes('QWEN')) return 'qwen';
+    if (s.includes('GPT') || s.includes('GPT5') || s.includes('GPT_5')) return 'gpt5';
+    return String(raw).toLowerCase();
+  };
+
   const [agentStats, setAgentStats] = useState<AgentStats[]>([]);
   const [loading, setLoading] = useState(true);
+  const [tradingCounts, setTradingCounts] = useState<Record<string, number> | null>(null);
+  const [tradingWins, setTradingWins] = useState<Record<string, number> | null>(null);
+  const [tradingLosses, setTradingLosses] = useState<Record<string, number> | null>(null);
+  const [tradingMaxBet, setTradingMaxBet] = useState<Record<string, number> | null>(null);
 
   // Subscribe to RTDB `/agent_balances` as single source of truth, unless simulate/mock is provided
   useEffect(() => {
@@ -218,7 +238,8 @@ export const TechnicalView = ({ mockAgents, simulate = false }: { mockAgents?: A
       unsub = listenToAgentBalances((items: any[]) => {
         // items: [{ agentId, balance }]
         const mapped: AgentStats[] = (items || []).map(it => {
-          const id = it.agentId || it.id || 'unknown';
+          const rawId = it.agentId || it.id || 'unknown';
+          const id = normalizeAgentId(rawId);
           const b = it.balance || {};
           const current = Number(b.current_balance ?? b.currentBalance ?? b.current ?? b.current_balance_usd ?? 0);
           const gross = Number(b.gross_balance ?? b.grossBalance ?? b.gross ?? current);
@@ -233,7 +254,7 @@ export const TechnicalView = ({ mockAgents, simulate = false }: { mockAgents?: A
           const minConf = Number(b.min_conf ?? b.minConf ?? b.minConfidence ?? 0);
           return {
             id,
-            name: b.agent_name ?? b.agentName ?? id,
+            name: b.agent_name ?? b.agentName ?? rawId,
             emoji: b.emoji ?? '',
             color: b.color ?? '',
             cash: current,
@@ -257,6 +278,62 @@ export const TechnicalView = ({ mockAgents, simulate = false }: { mockAgents?: A
     }
     return () => { if (unsub) try { unsub(); } catch (_) { } };
   }, [mockAgents, simulate]);
+
+  // Subscribe to `/agent_predictions` and compute counts per agent
+  useEffect(() => {
+    let unsub: (() => void) | null = null;
+    try {
+      unsub = listenToAgentPredictions((items: any[]) => {
+        // items are array of agent_prediction objects: compute counts per normalized agent id
+        const counts: Record<string, number> = {};
+        const wins: Record<string, number> = {};
+        const losses: Record<string, number> = {};
+
+        const normalize = (rawAgent?: string) => {
+          if (!rawAgent) return 'unknown';
+          const s = String(rawAgent).toUpperCase();
+          if (s.includes('DEEPSEEK')) return 'deepseek';
+          if (s.includes('CLAUDE')) return 'claude';
+          if (s.includes('GEMINI')) return 'gemini';
+          if (s.includes('GROK')) return 'grok';
+          if (s.includes('QWEN')) return 'qwen';
+          if (s.includes('GPT')) return 'gpt5';
+          if (s.includes('GPT5') || s.includes('GPT_5')) return 'gpt5';
+          return s.toLowerCase();
+        };
+
+        const maxBetMap: Record<string, number> = {};
+        for (const p of items || []) {
+          try {
+            const aid = normalize(p?.agent || p?.agentId || p?.agent_id || p?.agentName || p?.agent_name);
+            counts[aid] = (counts[aid] || 0) + 1;
+            const final = p?.final_pnl ?? p?.finalPnl ?? null;
+            if (final !== null && final !== undefined && !isNaN(Number(final))) {
+              const n = Number(final);
+              if (n > 0) wins[aid] = (wins[aid] || 0) + 1;
+              else if (n < 0) losses[aid] = (losses[aid] || 0) + 1;
+            }
+            // track max bet amount per agent (exposure)
+            const rawBet = p?.bet_amount ?? p?.betAmount ?? p?.bet?.amount ?? p?.amount ?? 0;
+            const betAmt = Number(rawBet) || 0;
+            if (betAmt > 0) {
+              maxBetMap[aid] = Math.max(maxBetMap[aid] || 0, betAmt);
+            }
+          } catch (e) {
+            // ignore
+          }
+        }
+
+        setTradingCounts(counts);
+        setTradingWins(wins);
+        setTradingLosses(losses);
+        setTradingMaxBet(Object.keys(maxBetMap).length ? maxBetMap : null);
+      });
+    } catch (e) {
+      console.warn('listenToAgentPredictions failed', e);
+    }
+    return () => { if (unsub) try { unsub(); } catch (_) { } };
+  }, []);
 
   // Use RTDB-provided `agentStats` only (single source); sort for display
   const displayAgents = [...agentStats].sort((a, b) => b.pnl - a.pnl);
@@ -295,45 +372,51 @@ export const TechnicalView = ({ mockAgents, simulate = false }: { mockAgents?: A
     },
   ];
 
+  const normalizeCount = (map: Record<string, number> | null, key: string, fallback: number) => {
+    if (map && typeof map[key] === 'number') return map[key];
+    if (typeof fallback === 'number') return fallback;
+    return 0;
+  };
+
   const tradingActivityData = [
     {
-      metric: "Total Trades",
-      deepseek: allAgents.find(a => a.id === 'deepseek')?.calls || 0,
-      claude: allAgents.find(a => a.id === 'claude')?.calls || 0,
-      qwen: allAgents.find(a => a.id === 'qwen')?.calls || 0,
-      gemini: allAgents.find(a => a.id === 'gemini')?.calls || 0,
-      grok: allAgents.find(a => a.id === 'grok')?.calls || 0,
-      gpt5: allAgents.find(a => a.id === 'gpt5')?.calls || 0,
+      metric: 'Total Trades',
+      deepseek: normalizeCount(tradingCounts, 'deepseek', allAgents.find(a => a.id === 'deepseek')?.calls || 0),
+      claude: normalizeCount(tradingCounts, 'claude', allAgents.find(a => a.id === 'claude')?.calls || 0),
+      qwen: normalizeCount(tradingCounts, 'qwen', allAgents.find(a => a.id === 'qwen')?.calls || 0),
+      gemini: normalizeCount(tradingCounts, 'gemini', allAgents.find(a => a.id === 'gemini')?.calls || 0),
+      grok: normalizeCount(tradingCounts, 'grok', allAgents.find(a => a.id === 'grok')?.calls || 0),
+      gpt5: normalizeCount(tradingCounts, 'gpt5', allAgents.find(a => a.id === 'gpt5')?.calls || 0),
     },
     {
-      metric: "Losses",
-      deepseek: allAgents.find(a => a.id === 'deepseek')?.losses || 0,
-      claude: allAgents.find(a => a.id === 'claude')?.losses || 0,
-      qwen: allAgents.find(a => a.id === 'qwen')?.losses || 0,
-      gemini: allAgents.find(a => a.id === 'gemini')?.losses || 0,
-      grok: allAgents.find(a => a.id === 'grok')?.losses || 0,
-      gpt5: allAgents.find(a => a.id === 'gpt5')?.losses || 0,
+      metric: 'Losses',
+      deepseek: normalizeCount(tradingLosses, 'deepseek', allAgents.find(a => a.id === 'deepseek')?.losses || 0),
+      claude: normalizeCount(tradingLosses, 'claude', allAgents.find(a => a.id === 'claude')?.losses || 0),
+      qwen: normalizeCount(tradingLosses, 'qwen', allAgents.find(a => a.id === 'qwen')?.losses || 0),
+      gemini: normalizeCount(tradingLosses, 'gemini', allAgents.find(a => a.id === 'gemini')?.losses || 0),
+      grok: normalizeCount(tradingLosses, 'grok', allAgents.find(a => a.id === 'grok')?.losses || 0),
+      gpt5: normalizeCount(tradingLosses, 'gpt5', allAgents.find(a => a.id === 'gpt5')?.losses || 0),
     },
     {
-      metric: "Wins",
-      deepseek: allAgents.find(a => a.id === 'deepseek')?.wins || 0,
-      claude: allAgents.find(a => a.id === 'claude')?.wins || 0,
-      qwen: allAgents.find(a => a.id === 'qwen')?.wins || 0,
-      gemini: allAgents.find(a => a.id === 'gemini')?.wins || 0,
-      grok: allAgents.find(a => a.id === 'grok')?.wins || 0,
-      gpt5: allAgents.find(a => a.id === 'gpt5')?.wins || 0,
+      metric: 'Wins',
+      deepseek: normalizeCount(tradingWins, 'deepseek', allAgents.find(a => a.id === 'deepseek')?.wins || 0),
+      claude: normalizeCount(tradingWins, 'claude', allAgents.find(a => a.id === 'claude')?.wins || 0),
+      qwen: normalizeCount(tradingWins, 'qwen', allAgents.find(a => a.id === 'qwen')?.wins || 0),
+      gemini: normalizeCount(tradingWins, 'gemini', allAgents.find(a => a.id === 'gemini')?.wins || 0),
+      grok: normalizeCount(tradingWins, 'grok', allAgents.find(a => a.id === 'grok')?.wins || 0),
+      gpt5: normalizeCount(tradingWins, 'gpt5', allAgents.find(a => a.id === 'gpt5')?.wins || 0),
     },
   ];
 
   const riskMetricsData = [
     {
-      metric: "Max Exposure",
-      deepseek: allAgents.find(a => a.id === 'deepseek')?.maxExposure || 0,
-      claude: allAgents.find(a => a.id === 'claude')?.maxExposure || 0,
-      qwen: allAgents.find(a => a.id === 'qwen')?.maxExposure || 0,
-      gemini: allAgents.find(a => a.id === 'gemini')?.maxExposure || 0,
-      grok: allAgents.find(a => a.id === 'grok')?.maxExposure || 0,
-      gpt5: allAgents.find(a => a.id === 'gpt5')?.maxExposure || 0,
+      metric: "Exposure ($)",
+      deepseek: allAgents.find(a => a.id === 'deepseek')?.exposure || 0,
+      claude: allAgents.find(a => a.id === 'claude')?.exposure || 0,
+      qwen: allAgents.find(a => a.id === 'qwen')?.exposure || 0,
+      gemini: allAgents.find(a => a.id === 'gemini')?.exposure || 0,
+      grok: allAgents.find(a => a.id === 'grok')?.exposure || 0,
+      gpt5: allAgents.find(a => a.id === 'gpt5')?.exposure || 0,
     },
     {
       metric: "P&L Norm.",
@@ -370,28 +453,20 @@ export const TechnicalView = ({ mockAgents, simulate = false }: { mockAgents?: A
         <div className="bg-card border border-border p-3 rounded-2xl flex flex-col min-h-0">
           <div className="text-[10px] text-center text-foreground mb-2 font-mono flex-shrink-0">Performance Metrics</div>
           <div className="flex-1 min-h-0">
-            <ResponsiveContainer width="100%" height={220}>
-              <RadarChart data={performanceData} outerRadius={90}>
-                <PolarGrid stroke="#26313a" />
-                <PolarAngleAxis dataKey="metric" tick={{ fill: '#7f95a6', fontSize: 11 }} />
-                {/* Render radars for each known agent so they overlap like the reference */}
-                {['DEEPSEEK', 'CLAUDE', 'QWEN', 'GEMINI', 'GROK', 'GPT5'].map((key, i) => {
-                  const color = AGENT_COLORS[key] ?? '#8b91a8';
-                  return (
-                    <Radar
-                      key={key}
-                      name={key}
-                      dataKey={key.toLowerCase()}
-                      stroke={color}
-                      fill={color}
-                      fillOpacity={0.08}
-                      strokeWidth={1.5}
-                      dot={false}
-                    />
-                  );
-                })}
-              </RadarChart>
-            </ResponsiveContainer>
+            <RadarVisualizer
+              data={performanceData.map(d => {
+                // ensure keys are lower-case as the visualizer expects direct keys
+                const copy: any = { metric: d.metric };
+                Object.keys(d).forEach(k => {
+                  if (k === 'metric') return;
+                  copy[k.toLowerCase()] = (d as any)[k];
+                });
+                return copy;
+              })}
+              agentKeys={['deepseek', 'claude', 'qwen', 'gemini', 'grok', 'gpt5']}
+              agentColors={AGENT_COLORS}
+              showLegend={false}
+            />
           </div>
         </div>
 
@@ -399,15 +474,19 @@ export const TechnicalView = ({ mockAgents, simulate = false }: { mockAgents?: A
         <div className="bg-card border border-border p-3 rounded-2xl flex flex-col min-h-0">
           <div className="text-[10px] text-center text-foreground mb-2 font-mono flex-shrink-0">Trading Activity</div>
           <div className="flex-1 min-h-0">
-            <ResponsiveContainer width="100%" height={220}>
-              <RadarChart data={tradingActivityData} outerRadius={90}>
-                <PolarGrid stroke="#26313a" />
-                <PolarAngleAxis dataKey="metric" tick={{ fill: '#7f95a6', fontSize: 11 }} />
-                {['DEEPSEEK', 'CLAUDE', 'QWEN', 'GEMINI', 'GROK', 'GPT5'].map((key) => (
-                  <Radar key={key} name={key} dataKey={key.toLowerCase()} stroke={AGENT_COLORS[key] ?? '#8b91a8'} fill={AGENT_COLORS[key] ?? '#8b91a8'} fillOpacity={0.08} strokeWidth={1.5} dot={false} />
-                ))}
-              </RadarChart>
-            </ResponsiveContainer>
+            <RadarVisualizer
+              data={tradingActivityData.map(d => {
+                const copy: any = { metric: d.metric };
+                Object.keys(d).forEach(k => {
+                  if (k === 'metric') return;
+                  copy[k.toLowerCase()] = (d as any)[k];
+                });
+                return copy;
+              })}
+              agentKeys={['deepseek', 'claude', 'qwen', 'gemini', 'grok', 'gpt5']}
+              agentColors={AGENT_COLORS}
+              showLegend={false}
+            />
           </div>
         </div>
 
@@ -415,15 +494,19 @@ export const TechnicalView = ({ mockAgents, simulate = false }: { mockAgents?: A
         <div className="bg-card border border-border p-3 rounded-2xl flex flex-col min-h-0">
           <div className="text-[10px] text-center text-foreground mb-2 font-mono flex-shrink-0">Risk Metrics</div>
           <div className="flex-1 min-h-0">
-            <ResponsiveContainer width="100%" height={220}>
-              <RadarChart data={riskMetricsData} outerRadius={90}>
-                <PolarGrid stroke="#26313a" />
-                <PolarAngleAxis dataKey="metric" tick={{ fill: '#7f95a6', fontSize: 11 }} />
-                {['DEEPSEEK', 'CLAUDE', 'QWEN', 'GEMINI', 'GROK', 'GPT5'].map((key) => (
-                  <Radar key={key} name={key} dataKey={key.toLowerCase()} stroke={AGENT_COLORS[key] ?? '#8b91a8'} fill={AGENT_COLORS[key] ?? '#8b91a8'} fillOpacity={0.08} strokeWidth={1.5} dot={false} />
-                ))}
-              </RadarChart>
-            </ResponsiveContainer>
+            <RadarVisualizer
+              data={riskMetricsData.map(d => {
+                const copy: any = { metric: d.metric };
+                Object.keys(d).forEach(k => {
+                  if (k === 'metric') return;
+                  copy[k.toLowerCase()] = (d as any)[k];
+                });
+                return copy;
+              })}
+              agentKeys={['deepseek', 'claude', 'qwen', 'gemini', 'grok', 'gpt5']}
+              agentColors={AGENT_COLORS}
+              showLegend={false}
+            />
           </div>
         </div>
       </div>

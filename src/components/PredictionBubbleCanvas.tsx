@@ -328,34 +328,53 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
         const height = containerRef.current ? containerRef.current.clientHeight : window.innerHeight;
         const centerX = width / 2;
         const centerY = height / 2;
-        // Compute a dynamic radius scale based primarily on bet amounts (investmentUsd)
-        // Prefer using the largest bet to size bubbles proportionally.
-        const betValues = (source || []).map((s: any) => Number(s.investmentUsd || s.bet_amount || 0)).filter((n: number) => !isNaN(n) && n >= 0);
+        // Compute a dynamic radius scale that includes market volume for market view
+        // so market bubbles size proportionally to observed volumes. Include multiple
+        // candidate numeric fields to make the scale robust across data shapes.
+        const betValues = (source || []).map((s: any) => {
+            const candidates = [s.investmentUsd, s.bet_amount, s.volume, s.volume24h, s.total_volume, s.volume_all_time];
+            for (const c of candidates) {
+                const n = Number(c);
+                if (!isNaN(n) && n > 0) return n;
+            }
+            return 0;
+        }).filter((n: number) => !isNaN(n) && n >= 0);
         const observedMaxBet = betValues.length ? Math.max(...betValues) : 0;
-        // Allow the display max to scale with observed bets so larger bets have visibly larger bubbles,
-        // while preventing extreme outliers from creating unmanageably large circles.
-        // Cap display max to avoid extremely large circles for moderate bets (e.g. $100)
-        const DISPLAY_MAX_BET = Math.max(10, Math.min(observedMaxBet || 0, 50));
-        const displayMax = Math.max(6, DISPLAY_MAX_BET);
-        // Use a moderate exponent and a controlled output range so $100 bubbles are noticeable but not dominating.
-        const radiusScale = d3.scalePow().exponent(0.45).domain([0, displayMax]).range([12, 80]).clamp(true as any);
+        // When rendering markets (many values potentially large), allow the scale to
+        // span the full observed range instead of clamping to a small fixed max.
+        const isMarketView = (source || []).some((s: any) => !!s.__isMarket);
+        const displayMax = Math.max(1, observedMaxBet);
+        // Choose a larger output range for markets so volume differences are visually obvious
+        const outputRange = isMarketView ? [18, 140] : [12, 80];
+        const exponent = isMarketView ? 0.45 : 0.45;
+        const radiusScale = d3.scalePow().exponent(exponent).domain([0, displayMax]).range(outputRange).clamp(true as any);
 
         const next: Record<string, any> = {};
         (source || []).forEach((d: any) => {
             const key = d.id || d.question || d.market || d.marketSlug || JSON.stringify(d);
             const existing = nodesRef.current[key];
-            // Prefer bet amount (investmentUsd / bet_amount) as the sizing score, then fall back
-            const betScore = (d.investmentUsd != null && !isNaN(Number(d.investmentUsd))) ? Number(d.investmentUsd) : (d.bet_amount != null && !isNaN(Number(d.bet_amount)) ? Number(d.bet_amount) : null);
-            const score = (betScore != null)
-                ? betScore
-                : (d.size != null)
-                    ? Number(d.size)
-                    : (d.confidence != null)
-                        ? Number(d.confidence)
-                        : (typeof d.probability === 'number')
-                            ? d.probability
-                            : (d.volume24h ? Math.min(Number(d.volume24h), 100) : 10);
-            const r = radiusShiftSafe(radiusScale(score));
+            // For market-sourced nodes prefer explicit `volume` (or total_volume) as the sizing metric.
+            let score: number | null = null;
+            if (d && d.__isMarket) {
+                score = (d.volume != null && !isNaN(Number(d.volume))) ? Number(d.volume) :
+                    (d.total_volume != null && !isNaN(Number(d.total_volume))) ? Number(d.total_volume) :
+                        (d.volume24h != null && !isNaN(Number(d.volume24h))) ? Number(d.volume24h) :
+                            (d.investmentUsd != null && !isNaN(Number(d.investmentUsd))) ? Number(d.investmentUsd) : null;
+            } else {
+                // Prefer bet amount (investmentUsd / bet_amount) as the sizing score, then fall back
+                const betScore = (d.investmentUsd != null && !isNaN(Number(d.investmentUsd))) ? Number(d.investmentUsd) : (d.bet_amount != null && !isNaN(Number(d.bet_amount)) ? Number(d.bet_amount) : null);
+                score = (betScore != null)
+                    ? betScore
+                    : (d.size != null)
+                        ? Number(d.size)
+                        : (d.confidence != null)
+                            ? Number(d.confidence)
+                            : (typeof d.probability === 'number')
+                                ? d.probability
+                                : (d.volume24h ? Number(d.volume24h) : 0);
+            }
+            const numericScore = (score != null && !isNaN(Number(score))) ? Number(score) : 0;
+            const r = radiusShiftSafe(radiusScale(numericScore));
             if (existing) {
                 existing.r = r;
                 existing.raw = d;

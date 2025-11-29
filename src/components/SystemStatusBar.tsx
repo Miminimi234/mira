@@ -154,7 +154,7 @@ export const SystemStatusBar = ({
         <h1
           className="font-bold tracking-tight"
           style={{
-            fontFamily: "'Boge', sans-serif",
+            fontFamily: "'Work Sans Bold', 'Boge', sans-serif",
             color: '#FFFFFF',
             fontSize: '1.25rem',
           }}
@@ -252,8 +252,8 @@ export const SystemStatusBar = ({
           size="sm"
           onClick={onTogglePerformance}
           className={`h-7 w-7 p-0 border-border rounded-full transition-colors ${isPerformanceOpen
-              ? 'bg-terminal-accent/20 border-terminal-accent/50 text-terminal-accent hover:bg-terminal-accent/30'
-              : 'bg-background hover:bg-bg-elevated text-foreground hover:text-foreground'
+            ? 'bg-terminal-accent/20 border-terminal-accent/50 text-terminal-accent hover:bg-terminal-accent/30'
+            : 'bg-background hover:bg-bg-elevated text-foreground hover:text-foreground'
             }`}
           title="Performance Index"
         >
@@ -264,8 +264,8 @@ export const SystemStatusBar = ({
           size="sm"
           onClick={onToggleSummary}
           className={`h-7 w-7 p-0 border-border rounded-full transition-colors ${isSummaryOpen && !showNewsFeed && !showWaitlist && !showWatchlist
-              ? 'bg-terminal-accent/20 border-terminal-accent/50 text-terminal-accent hover:bg-terminal-accent/30'
-              : 'bg-background hover:bg-bg-elevated text-foreground hover:text-foreground'
+            ? 'bg-terminal-accent/20 border-terminal-accent/50 text-terminal-accent hover:bg-terminal-accent/30'
+            : 'bg-background hover:bg-bg-elevated text-foreground hover:text-foreground'
             }`}
           title="Summary"
         >
@@ -277,8 +277,8 @@ export const SystemStatusBar = ({
             size="sm"
             onClick={onToggleWatchlist}
             className={`h-7 w-7 p-0 border-border rounded-full transition-colors ${showWatchlist && isSummaryOpen && !showNewsFeed && !showWaitlist
-                ? 'bg-terminal-accent/20 border-terminal-accent/50 text-terminal-accent hover:bg-terminal-accent/30'
-                : 'bg-background hover:bg-bg-elevated text-foreground hover:text-foreground'
+              ? 'bg-terminal-accent/20 border-terminal-accent/50 text-terminal-accent hover:bg-terminal-accent/30'
+              : 'bg-background hover:bg-bg-elevated text-foreground hover:text-foreground'
               }`}
             title="Watchlist"
           >
@@ -290,8 +290,8 @@ export const SystemStatusBar = ({
           size="sm"
           onClick={onToggleNewsFeed}
           className={`h-7 w-7 p-0 border-border rounded-full transition-colors ${showNewsFeed && isSummaryOpen
-              ? 'bg-terminal-accent/20 border-terminal-accent/50 text-terminal-accent hover:bg-terminal-accent/30'
-              : 'bg-background hover:bg-bg-elevated text-foreground hover:text-foreground'
+            ? 'bg-terminal-accent/20 border-terminal-accent/50 text-terminal-accent hover:bg-terminal-accent/30'
+            : 'bg-background hover:bg-bg-elevated text-foreground hover:text-foreground'
             }`}
           title="News Feed"
         >
@@ -303,8 +303,8 @@ export const SystemStatusBar = ({
             size="sm"
             onClick={onToggleWaitlist}
             className={`h-7 w-7 p-0 border-border rounded-full transition-colors ${showWaitlist && isSummaryOpen && !showNewsFeed
-                ? 'border-terminal-accent bg-terminal-accent/20 text-terminal-accent hover:bg-terminal-accent/30'
-                : 'bg-background hover:bg-bg-elevated text-foreground hover:text-foreground'
+              ? 'border-terminal-accent bg-terminal-accent/20 text-terminal-accent hover:bg-terminal-accent/30'
+              : 'bg-background hover:bg-bg-elevated text-foreground hover:text-foreground'
               }`}
             title="Join Waitlist"
           >

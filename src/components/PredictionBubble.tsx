@@ -1,6 +1,6 @@
 import { motion, useDragControls } from "framer-motion";
+import { TrendingDown, TrendingUp } from "lucide-react";
 import { useState } from "react";
-import { TrendingUp, TrendingDown } from "lucide-react";
 import { ReasoningModal } from "./ReasoningModal";
 
 export interface Prediction {
@@ -38,7 +38,7 @@ export const PredictionBubble = ({ prediction, position, onTradeConnect }: Predi
         animate={{ scale: 1, opacity: 1 }}
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.98 }}
-        className="absolute cursor-grab active:cursor-grabbing"
+        className="absolute cursor-grab active:cursor-grabbing banter-bubble-wrapper"
         style={{ left: position.x, top: position.y }}
         onHoverStart={() => setShowReasoning(true)}
         onHoverEnd={() => setShowReasoning(false)}
@@ -55,7 +55,7 @@ export const PredictionBubble = ({ prediction, position, onTradeConnect }: Predi
 
         {/* Main bubble */}
         <motion.div
-          className={`relative w-64 h-64 rounded-full bg-card border-2 border-${bubbleColor}/40 shadow-soft overflow-hidden`}
+          className={`relative w-64 h-64 rounded-full bg-card border-2 border-${bubbleColor}/40 shadow-soft overflow-hidden banter-bubble-inner`}
           animate={{
             boxShadow: [
               `0 0 20px rgba(${isYes ? '133, 238, 170' : '239, 68, 68'}, 0.2)`,
@@ -68,11 +68,10 @@ export const PredictionBubble = ({ prediction, position, onTradeConnect }: Predi
           <div className="p-6 h-full flex flex-col items-center justify-center text-center space-y-4">
             {/* Position badge */}
             <motion.div
-              className={`px-4 py-1.5 rounded-full font-bold text-sm border-2 ${
-                isYes 
-                  ? 'bg-trade-yes/20 border-trade-yes text-foreground' 
+              className={`px-4 py-1.5 rounded-full font-bold text-sm border-2 ${isYes
+                  ? 'bg-trade-yes/20 border-trade-yes text-foreground'
                   : 'bg-trade-no/20 border-trade-no text-foreground'
-              }`}
+                }`}
               initial={{ y: -10, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ delay: 0.2 }}

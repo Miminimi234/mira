@@ -15,7 +15,10 @@ export function listenToAgentPredictions(callback: (items: any[]) => void) {
         console.warn('[listenToAgentPredictions] no db');
         return () => { };
     }
-    const r = query(ref(db, '/agent_predictions'), orderByChild('createdAt'), limitToLast(200));
+    // Subscribe to the full `/agent_predictions` node so callers receive all historical
+    // agent prediction records (not limited to the most recent N). This ensures counts
+    // and max-bet calculations reflect the complete dataset.
+    const r = ref(db, '/agent_predictions');
     const handler = (snap: any) => {
         const arr = snapshotToArray(snap);
         callback(arr);

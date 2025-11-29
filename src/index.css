@@ -11,6 +11,15 @@
   font-display: swap;
 }
 
+/* Work Sans Bold - used for bubble text (stored in public/) */
+@font-face {
+  font-family: 'Work Sans Bold';
+  src: url('/work-sans.bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
 All colors MUST be HSL.
 */
@@ -482,6 +491,18 @@ All colors MUST be HSL.
     user-select: none !important;
   }
 
+  /* Ensure bubble text (SVG and HTML) uses Work Sans Bold for crisp, consistent rendering */
+  .banter-bubble-inner,
+  .banter-bubble-inner * {
+    font-family: 'Work Sans Bold', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
+
+  /* SVG bubble nodes (D3) use <text> inside g.pred-node */
+  g.pred-node text,
+  .pred-node text {
+    font-family: 'Work Sans Bold', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
+
   /* Allow box-shadow on inner bubble for glow, but remove on focus states */
   .banter-bubble-inner {
     outline: none !important;
@@ -591,6 +612,11 @@ All colors MUST be HSL.
     transform: translateZ(0);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Use Work Sans Bold for the main MIRA letters in header/nav */
+  .mira-letter {
+    font-family: 'Work Sans Bold', 'Boge', system-ui, -apple-system, 'Segoe UI', sans-serif;
   }
 
   .mira-letter:nth-child(1) {
