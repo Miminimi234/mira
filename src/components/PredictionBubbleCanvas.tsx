@@ -30,8 +30,8 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
     // Maintain a stable nodes map so seeded positions persist across renders
     const nodesRef = useRef<Record<string, any>>({});
     const simRef = useRef<d3.Simulation<any, undefined> | null>(null);
-    // Simple debounce timer for zoom recalculation
-    const zoomTimerRef = useRef<number | null>(null);
+    // Simple refs
+    // (no external compute ref in production)
 
     const [fetchedItems, setFetchedItems] = useState<any[] | null>(null);
     const [marketsMapState, setMarketsMapState] = useState<Record<string, any>>({});
@@ -333,8 +333,10 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
         });
         const width = containerRef.current ? containerRef.current.clientWidth : window.innerWidth;
         const height = containerRef.current ? containerRef.current.clientHeight : window.innerHeight;
-        const centerX = width / 2;
-        const centerY = height / 2;
+        // Compute world-space center (convert screen center into world coords using current transform)
+        const tr = transformRef.current || { scale: 1, tx: 0, ty: 0 };
+        const centerX = ((width / 2) - (tr.tx || 0)) / (tr.scale || 1);
+        const centerY = ((height / 2) - (tr.ty || 0)) / (tr.scale || 1);
         // Compute a dynamic radius scale that includes market volume for market view
         // so market bubbles size proportionally to observed volumes. Include multiple
         // candidate numeric fields to make the scale robust across data shapes.
@@ -387,9 +389,18 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
                 existing.raw = d;
                 next[key] = existing;
             } else {
-                // seed positions inside the container bounds
-                const seedX = Math.min(Math.max(centerX + (Math.random() - 0.5) * 200, r), Math.max(10, width - r));
-                const seedY = Math.min(Math.max(centerY + (Math.random() - 0.5) * 200, r), Math.max(10, height - r));
+                // seed positions inside the container bounds (world coordinates)
+                const s = tr.scale || 1;
+                const tx = tr.tx || 0;
+                const ty = tr.ty || 0;
+                const minWorldX = (r - tx) / s;
+                const maxWorldX = (width - r - tx) / s;
+                const minWorldY = (r - ty) / s;
+                const maxWorldY = (height - r - ty) / s;
+                const seedXRaw = centerX + (Math.random() - 0.5) * 200;
+                const seedYRaw = centerY + (Math.random() - 0.5) * 200;
+                const seedX = Math.min(Math.max(seedXRaw, minWorldX), Math.max(minWorldX, maxWorldX));
+                const seedY = Math.min(Math.max(seedYRaw, minWorldY), Math.max(minWorldY, maxWorldY));
                 next[key] = { ...d, r, x: seedX, y: seedY };
             }
         });
@@ -614,13 +625,21 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
                     }
                 }
             }
-            // Keep nodes inside container bounds after resolving collisions
+            // Keep nodes inside container bounds after resolving collisions (work in world coords)
             const width = containerRef.current ? containerRef.current.clientWidth : window.innerWidth;
             const height = containerRef.current ? containerRef.current.clientHeight : window.innerHeight;
+            const tr = transformRef.current || { scale: 1, tx: 0, ty: 0 };
+            const s = tr.scale || 1;
+            const tx = tr.tx || 0;
+            const ty = tr.ty || 0;
             for (const n of items) {
                 const r = n.r || 24;
-                n.x = Math.max(r, Math.min(width - r, n.x));
-                n.y = Math.max(r, Math.min(height - r, n.y));
+                const minX = (r - tx) / s;
+                const maxX = (width - r - tx) / s;
+                const minY = (r - ty) / s;
+                const maxY = (height - r - ty) / s;
+                n.x = Math.max(minX, Math.min(maxX, n.x));
+                n.y = Math.max(minY, Math.min(maxY, n.y));
             }
         };
 
@@ -672,14 +691,38 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
                 d3.select(this).select('circle').style('cursor', 'grabbing');
                 // ensure simulation is awake
                 if (simRef.current) simRef.current.alphaTarget(0.3).restart();
-                // pin the node to its current position
-                d.fx = d.x;
-                d.fy = d.y;
+                // pin the node to its current position (convert screen->world coords)
+                try {
+                    const s = transformRef.current.scale || 1;
+                    const tx = transformRef.current.tx || 0;
+                    const ty = transformRef.current.ty || 0;
+                    d.fx = d.x != null ? d.x : ((event.x - tx) / s);
+                    d.fy = d.y != null ? d.y : ((event.y - ty) / s);
+                } catch (e) {
+                    d.fx = d.x; d.fy = d.y;
+                }
             })
             .on('drag', function (event, d: any) {
-                // pin to pointer location
-                d.fx = Math.max(d.r || 24, Math.min((containerRef.current?.clientWidth || window.innerWidth) - (d.r || 24), event.x));
-                d.fy = Math.max(d.r || 24, Math.min((containerRef.current?.clientHeight || window.innerHeight) - (d.r || 24), event.y));
+                // pin to pointer location (convert screen coords to world coords and clamp to world bounds)
+                try {
+                    const s = transformRef.current.scale || 1;
+                    const tx = transformRef.current.tx || 0;
+                    const ty = transformRef.current.ty || 0;
+                    const r = d.r || 24;
+                    const widthNow = containerRef.current?.clientWidth || window.innerWidth;
+                    const heightNow = containerRef.current?.clientHeight || window.innerHeight;
+                    const minWorldX = (r - tx) / s;
+                    const maxWorldX = (widthNow - r - tx) / s;
+                    const minWorldY = (r - ty) / s;
+                    const maxWorldY = (heightNow - r - ty) / s;
+                    const worldX = (event.x - tx) / s;
+                    const worldY = (event.y - ty) / s;
+                    d.fx = Math.max(minWorldX, Math.min(maxWorldX, worldX));
+                    d.fy = Math.max(minWorldY, Math.min(maxWorldY, worldY));
+                } catch (e) {
+                    d.fx = Math.max(d.r || 24, Math.min((containerRef.current?.clientWidth || window.innerWidth) - (d.r || 24), event.x));
+                    d.fy = Math.max(d.r || 24, Math.min((containerRef.current?.clientHeight || window.innerHeight) - (d.r || 24), event.y));
+                }
             })
             .on('end', function (_event, d: any) {
                 // release pin so simulation can pull back to center
@@ -1027,67 +1070,7 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
             simRef.current.alpha(0.3).restart();
         }
 
-        // Debounced zoom: compute and apply zoom after node updates or resize.
-        const ZOOM_DEBOUNCE_MS = 150;
-        const MIN_SCALE = 0.5;
-        const computeAndApplyZoomNow = (nodeArray: any[]) => {
-            try {
-                if (!content || !nodeArray || !nodeArray.length) {
-                    content.attr('transform', null as any);
-                    return;
-                }
-                // If user has manually panned/zoomed, avoid overwriting their view
-                if (!autoZoomRef.current) return;
-                const widthNow = container.clientWidth || window.innerWidth;
-                const heightNow = container.clientHeight || window.innerHeight;
-                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-                for (const n of nodeArray) {
-                    const x = Number(n.x || 0);
-                    const y = Number(n.y || 0);
-                    const r = Number(n.r || 24);
-                    minX = Math.min(minX, x - r);
-                    maxX = Math.max(maxX, x + r);
-                    minY = Math.min(minY, y - r);
-                    maxY = Math.max(maxY, y + r);
-                }
-                const bboxW = Math.max(1, (maxX - minX));
-                const bboxH = Math.max(1, (maxY - minY));
-                const paddingNow = Math.max(40, Math.min(240, Math.round(Math.min(widthNow, heightNow) * 0.06)));
-                const scaleXNow = (widthNow - paddingNow) / bboxW;
-                const scaleYNow = (heightNow - paddingNow) / bboxH;
-                const rawScaleNow = Math.min(scaleXNow, scaleYNow);
-                const scaleNow = Math.min(1, Math.max(MIN_SCALE, rawScaleNow));
-                const bboxCX = (minX + maxX) / 2;
-                const bboxCY = (minY + maxY) / 2;
-                const txNow = (widthNow / 2) - bboxCX * scaleNow;
-                const tyNow = (heightNow / 2) - bboxCY * scaleNow;
-                // Update tracked transform and apply
-                transformRef.current = { scale: scaleNow, tx: txNow, ty: tyNow };
-                try {
-                    (content as any).transition().duration(120).attr('transform', `translate(${txNow},${tyNow}) scale(${scaleNow})` as any);
-                } catch (e) {
-                    content.attr('transform', `translate(${txNow},${tyNow}) scale(${scaleNow})` as any);
-                }
-            } catch (e) {
-                // ignore
-            }
-        };
-
-        const scheduleComputeAndApplyZoom = (nodeArray: any[]) => {
-            try {
-                if (zoomTimerRef.current) {
-                    window.clearTimeout(zoomTimerRef.current);
-                    zoomTimerRef.current = null;
-                }
-                zoomTimerRef.current = window.setTimeout(() => {
-                    computeAndApplyZoomNow(nodeArray);
-                    zoomTimerRef.current = null;
-                }, ZOOM_DEBOUNCE_MS);
-            } catch (e) { /* ignore */ }
-        };
-
-        // schedule initial zoom
-        try { scheduleComputeAndApplyZoom(nodes); } catch (e) { }
+        // Auto-fit/auto-zoom disabled: nodes are positioned and the user can pan/zoom manually.
 
         // --- Background pan/drag support ---
         // Insert a transparent rect behind the content group to capture drag events for panning.
@@ -1122,8 +1105,9 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
                     try {
                         const s = transformRef.current.scale || 1;
                         // Adjust translation by delta divided by scale (transform is translate(...) scale(s))
-                        transformRef.current.tx = (transformRef.current.tx || 0) + (event.dx || 0) / s;
-                        transformRef.current.ty = (transformRef.current.ty || 0) + (event.dy || 0) / s;
+                        // For transform = scale(s) translate(tx,ty), translation is in screen coords
+                        transformRef.current.tx = (transformRef.current.tx || 0) + (event.dx || 0);
+                        transformRef.current.ty = (transformRef.current.ty || 0) + (event.dy || 0);
                         content.attr('transform', `translate(${transformRef.current.tx},${transformRef.current.ty}) scale(${transformRef.current.scale})`);
                     } catch (e) { /* ignore */ }
                 })
@@ -1138,8 +1122,7 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
         const handleResize = () => {
             const w = window.innerWidth, h = window.innerHeight;
             svg.attr("width", w).attr("height", h).attr("viewBox", `0 0 ${w} ${h}`);
-            // Recompute zoom on resize so layout adapts (debounced)
-            try { scheduleComputeAndApplyZoom(simRef.current?.nodes() || nodes); } catch (e) { }
+            // auto-fit removed: no automatic zoom recomputation on resize
         };
 
         window.addEventListener("resize", handleResize);
@@ -1147,10 +1130,6 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
         return () => {
             window.removeEventListener("resize", handleResize);
             svg.selectAll("g.pred-node").on('.drag', null as any);
-            if (zoomTimerRef.current) {
-                window.clearTimeout(zoomTimerRef.current);
-                zoomTimerRef.current = null;
-            }
         };
     }, [fetchedItems, onBubbleClick]);
 
@@ -1174,9 +1153,10 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
             const h = containerRef.current ? containerRef.current.clientHeight : window.innerHeight;
             const px = w / 2;
             const py = h / 2;
-            // Keep viewport center fixed while scaling
-            const tx = prev.tx + px * (1 / newScale - 1 / oldScale);
-            const ty = prev.ty + py * (1 / newScale - 1 / oldScale);
+            // Keep viewport center fixed while scaling (translate then scale transform math)
+            const ratio = newScale / oldScale;
+            const tx = (prev.tx || 0) * ratio + px * (1 - ratio);
+            const ty = (prev.ty || 0) * ratio + py * (1 - ratio);
             applyTransform(newScale, tx, ty);
         } catch (e) { /* ignore */ }
     };
@@ -1212,6 +1192,7 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
                 >
                     +
                 </button>
+
             </div>
             <svg ref={svgRef} style={{ width: "100%", height: "100%" }} />
             {/* Overlay messages for empty/no-data states */}
