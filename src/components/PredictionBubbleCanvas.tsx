@@ -1119,6 +1119,38 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
             bg.attr('width', width).attr('height', height);
         }
 
+        // Wheel-to-zoom: zoom toward mouse pointer with clamped scale
+        const onWheel = (e: any) => {
+            try {
+                e.preventDefault();
+                autoZoomRef.current = false;
+                const prev = transformRef.current || { scale: 1, tx: 0, ty: 0 };
+                const oldScale = prev.scale || 1;
+                // Use exponential zoom for smoothness; adjust intensity as needed
+                const zoomIntensity = 0.0018;
+                const factor = Math.exp(-e.deltaY * zoomIntensity);
+                const newScale = Math.max(0.25, Math.min(4, oldScale * factor));
+
+                // Compute pointer position relative to SVG
+                const rect = svgEl.getBoundingClientRect();
+                const px = (e.clientX || 0) - rect.left;
+                const py = (e.clientY || 0) - rect.top;
+
+                // Maintain world point under cursor while scaling
+                const ratio = newScale / oldScale;
+                const txPrev = prev.tx || 0;
+                const tyPrev = prev.ty || 0;
+                const newTx = px - (px - txPrev) * ratio;
+                const newTy = py - (py - tyPrev) * ratio;
+
+                transformRef.current = { scale: newScale, tx: newTx, ty: newTy };
+                content.attr('transform', `translate(${newTx},${newTy}) scale(${newScale})`);
+            } catch (err) { /* ignore */ }
+        };
+
+        // Attach non-passive wheel listener so we can prevent page scroll
+        try { svgEl.addEventListener('wheel', onWheel, { passive: false }); } catch (e) { }
+
         const handleResize = () => {
             const w = window.innerWidth, h = window.innerHeight;
             svg.attr("width", w).attr("height", h).attr("viewBox", `0 0 ${w} ${h}`);
@@ -1129,6 +1161,7 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
 
         return () => {
             window.removeEventListener("resize", handleResize);
+            try { svgEl.removeEventListener('wheel', onWheel as any); } catch (e) { }
             svg.selectAll("g.pred-node").on('.drag', null as any);
         };
     }, [fetchedItems, onBubbleClick]);
