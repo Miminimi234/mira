@@ -54,11 +54,18 @@ export const LoginButton = ({
 
     // Listen for popup to close or send message
     const checkPopup = setInterval(() => {
-      if (popup.closed) {
-        clearInterval(checkPopup);
-        setIsConnecting(false);
-        // Check auth status after popup closes
-        checkAuthStatus();
+      try {
+        // Accessing `popup.closed` can be blocked by cross-origin policies
+        // (Cross-Origin-Opener-Policy). Wrap in try/catch to avoid noisy
+        // console errors; we still use postMessage for the success path.
+        if (popup.closed) {
+          clearInterval(checkPopup);
+          setIsConnecting(false);
+          // Check auth status after popup closes
+          checkAuthStatus();
+        }
+      } catch (err) {
+        // Ignore cross-origin access errors; rely on postMessage instead.
       }
     }, 500);
 
@@ -107,9 +114,18 @@ export const LoginButton = ({
 
     // Cleanup after 5 minutes if popup is still open
     setTimeout(() => {
-      if (!popup.closed) {
+      try {
+        if (!popup.closed) {
+          clearInterval(checkPopup);
+          popup.close();
+          setIsConnecting(false);
+          window.removeEventListener('message', messageHandler);
+        }
+      } catch (err) {
+        // Ignore cross-origin errors when querying popup state; still
+        // remove message listener to avoid leaks.
         clearInterval(checkPopup);
-        popup.close();
+        try { popup.close(); } catch (_) { }
         setIsConnecting(false);
         window.removeEventListener('message', messageHandler);
       }
