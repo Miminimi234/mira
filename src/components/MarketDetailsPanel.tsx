@@ -740,8 +740,9 @@ export const MarketDetailsPanel = ({ market, onClose, onWatchlistChange, watchli
         </div>
         <a
           href={
+            // Use search-based link for reliability instead of direct event slug path
             market.marketSlug
-              ? `https://polymarket.com/event/${market.marketSlug}`
+              ? `https://polymarket.com/search?q=${encodeURIComponent(String(marketTitle))}`
               : market.conditionId
                 ? `https://polymarket.com/condition/${market.conditionId}`
                 : `https://polymarket.com/search?q=${encodeURIComponent(String(marketTitle))}`

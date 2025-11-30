@@ -103,8 +103,8 @@ export const AgentTradesPanel = ({ agentId, agentName, agentEmoji, trades, onClo
     const isExpanded = expandedTradeId === trade.id;
     const decisionPill = (
       <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${trade.decision === "YES"
-          ? "bg-trade-yes/15 text-trade-yes border border-trade-yes/30"
-          : "bg-trade-no/15 text-trade-no border border-trade-no/30"
+        ? "bg-trade-yes/15 text-trade-yes border border-trade-yes/30"
+        : "bg-trade-no/15 text-trade-no border border-trade-no/30"
         }`}>
         {trade.decision === "YES" ? (
           <TrendingUp className="w-2.5 h-2.5" />
@@ -120,8 +120,8 @@ export const AgentTradesPanel = ({ agentId, agentName, agentEmoji, trades, onClo
         key={trade.id}
         onClick={() => setExpandedTradeId(prev => prev === trade.id ? null : trade.id)}
         className={`border rounded-2xl px-3 py-2.5 cursor-pointer ${isExpanded
-            ? "border-terminal-accent/40 bg-bg-elevated shadow-glow"
-            : "border-border bg-bg-card/80 hover:border-terminal-accent/40"
+          ? "border-terminal-accent/40 bg-bg-elevated shadow-glow"
+          : "border-border bg-bg-card/80 hover:border-terminal-accent/40"
           }`}
       >
         <div className="flex items-center justify-between gap-3">
@@ -145,8 +145,8 @@ export const AgentTradesPanel = ({ agentId, agentName, agentEmoji, trades, onClo
           </div>
           {section === "CLOSED" && typeof trade.pnl === 'number' && (
             <div className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${trade.pnl >= 0
-                ? "bg-trade-yes/15 text-trade-yes border border-trade-yes/30"
-                : "bg-trade-no/15 text-trade-no border border-trade-no/30"
+              ? "bg-trade-yes/15 text-trade-yes border border-trade-yes/30"
+              : "bg-trade-no/15 text-trade-no border border-trade-no/30"
               }`}>
               {trade.pnl >= 0 ? '+' : ''}${trade.pnl.toFixed(2)}
             </div>
@@ -205,8 +205,9 @@ export const AgentTradesPanel = ({ agentId, agentName, agentEmoji, trades, onClo
                 {(trade.marketSlug || trade.conditionId) && (
                   <a
                     href={
+                      // Use the search URL which is more reliable than direct event slug paths
                       trade.marketSlug
-                        ? `https://polymarket.com/event/${trade.marketSlug}`
+                        ? `https://polymarket.com/search?q=${encodeURIComponent(String(trade.market))}`
                         : `https://polymarket.com/condition/${trade.conditionId}`
                     }
                     target="_blank"

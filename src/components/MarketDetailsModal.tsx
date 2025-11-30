@@ -152,8 +152,8 @@ export const MarketDetailsModal = ({ isOpen, onClose, market }: MarketDetailsMod
                 {/* Position & Probability */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className={`p-4 rounded-lg border-2 ${isYes
-                      ? 'bg-trade-yes/10 border-trade-yes/40'
-                      : 'bg-trade-no/10 border-trade-no/40'
+                    ? 'bg-trade-yes/10 border-trade-yes/40'
+                    : 'bg-trade-no/10 border-trade-no/40'
                     }`}>
                     <div className="text-xs text-muted-foreground font-mono mb-1">POSITION</div>
                     <div className={`text-2xl font-bold ${isYes ? 'text-trade-yes' : 'text-trade-no'
@@ -293,8 +293,8 @@ export const MarketDetailsModal = ({ isOpen, onClose, market }: MarketDetailsMod
                     <div className="space-y-2">
                       {/* YES Outcome */}
                       <div className={`p-2.5 rounded-lg border-2 ${isYes
-                          ? 'bg-trade-yes/20 border-trade-yes/50'
-                          : 'bg-trade-yes/5 border-trade-yes/20'
+                        ? 'bg-trade-yes/20 border-trade-yes/50'
+                        : 'bg-trade-yes/5 border-trade-yes/20'
                         }`}>
                         <div className="flex items-center justify-between mb-1.5">
                           <div className="flex items-center gap-1.5">
@@ -326,8 +326,8 @@ export const MarketDetailsModal = ({ isOpen, onClose, market }: MarketDetailsMod
 
                       {/* NO Outcome */}
                       <div className={`p-2.5 rounded-lg border-2 ${!isYes
-                          ? 'bg-trade-no/20 border-trade-no/50'
-                          : 'bg-trade-no/5 border-trade-no/20'
+                        ? 'bg-trade-no/20 border-trade-no/50'
+                        : 'bg-trade-no/5 border-trade-no/20'
                         }`}>
                         <div className="flex items-center justify-between mb-1.5">
                           <div className="flex items-center gap-1.5">
@@ -544,8 +544,9 @@ export const MarketDetailsModal = ({ isOpen, onClose, market }: MarketDetailsMod
                 </div>
                 <a
                   href={
+                    // Prefer search query — more reliable than direct event slug paths
                     market.marketSlug
-                      ? `https://polymarket.com/event/${market.marketSlug}`
+                      ? `https://polymarket.com/search?q=${encodeURIComponent(market.question)}`
                       : market.conditionId
                         ? `https://polymarket.com/condition/${market.conditionId}`
                         : `https://polymarket.com/search?q=${encodeURIComponent(market.question)}`

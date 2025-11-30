@@ -971,42 +971,29 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
             // Increase market slug font-size: larger multiplier and higher minimum
             .attr('font-size', (d: any) => d && d.__isMarket ? Math.max(16, Math.round((d.r || 24) * 0.85)) : Math.max(12, Math.round((d.r || 24) * 0.48)))
             .attr('font-weight', '900')
-            .attr('stroke', '#000')
-            .attr('stroke-width', (d: any) => Math.max(0.5, Math.round((d.r || 24) * 0.06)))
-            .attr('paint-order', 'stroke')
+            // For market-sourced labels we do not want a black outline stroke — keep stroke for predictions only
+            .attr('stroke', (d: any) => (d && d.__isMarket) ? null : '#000')
+            .attr('stroke-width', (d: any) => (d && d.__isMarket) ? 0 : Math.max(0.5, Math.round((d.r || 24) * 0.06)))
+            .attr('paint-order', (d: any) => (d && d.__isMarket) ? null : 'stroke')
             .each(function (d: any) {
                 const el = d3.select(this);
                 el.selectAll('tspan').remove();
 
                 if (d && d.__isMarket) {
-                    // Prepare slug: break after 14 chars, truncate after 24 chars total
+                    // Prepare slug: truncate after 9 chars total for compact labels
                     const slugRaw = String(d.market || d.marketSlug || '');
-                    const maxTotal = 24;
-                    const firstLineLen = 14;
-                    let first = slugRaw.slice(0, firstLineLen);
-                    let rest = slugRaw.slice(firstLineLen, maxTotal);
+                    const maxTotal = 9;
+                    let first = slugRaw.slice(0, maxTotal);
                     if (slugRaw.length > maxTotal) {
-                        rest = rest.slice(0, Math.max(0, maxTotal - firstLineLen));
-                        // append ellipsis when truncated
-                        if (rest.length > 0) rest = rest.replace(/\s+$/, '') + '…';
-                        else first = first.slice(0, Math.max(0, first.length - 1)) + '…';
+                        first = first.replace(/\s+$/, '') + '…';
                     }
 
-                    // First tspan (line 1)
+                    // Single tspan (truncated)
                     el.append('tspan')
                         .attr('x', 0)
                         .attr('dy', '0')
                         .attr('fill', '#ffffff')
                         .text(first);
-
-                    // Second tspan (line 2) if any
-                    if (rest && rest.length > 0) {
-                        el.append('tspan')
-                            .attr('x', 0)
-                            .attr('dy', '1.05em')
-                            .attr('fill', '#ffffff')
-                            .text(rest);
-                    }
                 } else {
                     // Default behavior for prediction decision labels
                     const label = getDecisionLabel(d);
@@ -1035,7 +1022,7 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
             .attr('fill', '#ffffff')
             .attr('font-weight', '800');
 
-        // Title displayed below the amount — single-line truncated to 10 chars
+        // Title displayed below the amount — single-line truncated to 9 chars
         merged.select('text.title')
             .text((d: any) => d && d.__isMarket ? '' : getTitleLabel(d))
             .attr('y', (d: any) => Math.round((d.r || 24) * 0.38))
@@ -1273,7 +1260,7 @@ function getTitleLabel(d: any) {
     const title = d.market || d.question || d.symbol || d.id || "?";
     const s = String(title).trim();
     // Show up to 10 characters, add ellipsis when longer
-    const max = 10;
+    const max = 9;
     if (s.length <= max) return s;
     return s.slice(0, max) + '…';
 }

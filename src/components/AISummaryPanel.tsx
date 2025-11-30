@@ -36,6 +36,16 @@ const BACKEND_TO_FRONTEND_AGENT_ID: Record<string, string> = {
 // Normalize agent IDs when processing summary data
 const normalizeAgentId = (agentId: string) => BACKEND_TO_FRONTEND_AGENT_ID[agentId.toUpperCase()] || agentId.toLowerCase();
 
+// Normalize keys used in maps/dropdowns: lowercase and remove non-alphanumeric
+const normalizeAgentKey = (id: any) => {
+  if (!id && id !== 0) return '';
+  try {
+    return String(id).toLowerCase().replace(/[^a-z0-9]/g, '');
+  } catch (e) {
+    return String(id).toLowerCase();
+  }
+};
+
 const getAgentLogo = (agentName: string): string => {
   const agentUpper = agentName.toUpperCase();
   if (agentUpper.includes("GROK")) return "/grok.png";
@@ -385,13 +395,17 @@ export const AISummaryPanel = ({ onTradeClick, onDecisionsUpdate, selectedAgentF
     if (Array.isArray(data.agents)) {
       setAgents(prevAgents => {
         const merged = new Map<string, { id: string; name: string; emoji: string }>();
-        DEFAULT_AGENT_OPTIONS.forEach(agent => merged.set(agent.id, agent));
+        // seed with defaults but ensure keys are normalized
+        DEFAULT_AGENT_OPTIONS.forEach(agent => merged.set(normalizeAgentKey(agent.id), { ...agent, id: normalizeAgentKey(agent.id) }));
         data.agents.forEach((agent: any) => {
           if (!agent?.id) return;
-          const normalizedId = String(agent.id).toLowerCase();
+          const rawId = agent.id;
+          const normalizedId = normalizeAgentKey(rawId);
+          const rawName = agent.name || agent.displayName || String(rawId);
+          const cleanedName = String(rawName).replace(/[_\-.]+/g, ' ').replace(/\s+/g, ' ').trim();
           merged.set(normalizedId, {
             id: normalizedId,
-            name: agent.name || agent.displayName || normalizedId.toUpperCase(),
+            name: cleanedName,
             emoji: agent.emoji || agent.avatar || merged.get(normalizedId)?.emoji || '🤖',
           });
         });
@@ -682,9 +696,13 @@ export const AISummaryPanel = ({ onTradeClick, onDecisionsUpdate, selectedAgentF
       const tradesByAgent: Record<string, any[]> = {};
 
       for (const item of items) {
-        const agentId = (item.agentId || item.agent || 'unknown').toString().toLowerCase();
+        const rawAgentId = (item.agentId || item.agent || 'unknown');
+        // Use canonical frontend id mapping (maps backend ids like GROK_4 -> 'grok')
+        const agentId = normalizeAgentId(rawAgentId);
         if (!agentsMap.has(agentId)) {
-          agentsMap.set(agentId, { id: agentId, name: item.agentName || agentId, emoji: item.agentEmoji || '🤖' });
+          const rawName = item.agentName || String(rawAgentId);
+          const cleanedName = String(rawName).replace(/[_\-.]+/g, ' ').replace(/\s+/g, ' ').trim();
+          agentsMap.set(agentId, { id: agentId, name: cleanedName, emoji: item.agentEmoji || '🤖' });
         }
         tradesByAgent[agentId] = tradesByAgent[agentId] || [];
         tradesByAgent[agentId].push(item);
@@ -708,6 +726,17 @@ export const AISummaryPanel = ({ onTradeClick, onDecisionsUpdate, selectedAgentF
       if (unsubMarkets) unsubMarkets();
     };
   }, []);
+
+  // Debug: when decisions appear, log runtime agents for inspection (temporary)
+  useEffect(() => {
+    try {
+      if (typeof window === 'undefined') return;
+      if (decisions.length > 0 && agents && agents.length > 0) {
+        // Log a compact map of id -> name so we can spot duplicates at runtime
+        console.debug('[AISummaryPanel][DEBUG] runtime agents:', agents.map(a => ({ id: a.id, name: a.name })));
+      }
+    } catch (e) { /* ignore */ }
+  }, [agents, decisions.length]);
 
   useEffect(() => {
     const interval = setInterval(() => {
