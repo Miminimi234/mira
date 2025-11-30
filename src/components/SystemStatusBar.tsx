@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { getCustodialWallet, getOrCreateWallet, storeCustodialWallet } from "@/lib/wallet";
-import { BarChart3, Bot, Check, Copy, Mail, Newspaper, Star, Users } from "lucide-react";
+import { BarChart3, Bot, Check, Copy, Github, Mail, Newspaper, Star, Users } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { CustodialWallet } from "./CustodialWallet";
 import { LoginButton } from "./LoginButton";
@@ -243,6 +243,15 @@ export const SystemStatusBar = ({
             </div>
           </DialogContent>
         </Dialog>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => window.open('https://github.com/Miramaps/Mira', '_blank', 'noopener,noreferrer')}
+          className="h-7 w-7 p-0 border-border bg-background hover:bg-bg-elevated text-foreground hover:text-foreground rounded-full"
+          title="GitHub"
+        >
+          <Github className="w-3.5 h-3.5" />
+        </Button>
       </div>
 
       {/* Right side - Performance, Summary, News Feed, Build Agent, Wallet, Login */}
