@@ -410,9 +410,7 @@ export const ActivePositions = ({ agents, selectedAgent, onAgentClick }: ActiveP
                     );
                   })()}
                 </div>
-                <div className="text-[10px] text-text-secondary truncate" style={{ fontWeight: 400 }}>
-                  {agent.openMarkets} mkt • {agent.isActive ? 'ACTIVE' : 'IDLE'}
-                </div>
+                {/* status line removed per request */}
               </div>
             </motion.button>
           ))}
