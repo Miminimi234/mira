@@ -1185,11 +1185,7 @@ export default function PredictionBubbleCanvas({ items, onBubbleClick, showTitle
         <div ref={containerRef} style={{ width: "100%", height: "100%", position: "absolute", inset: 0, background: "#000" }}>
             <style>{`\n                .bubble { cursor:grab; stroke-width:3; transition:all .25s; }\n                .bubble:hover { stroke:white !important; stroke-width:5 !important; }\n                .bubble.yes { stroke: hsl(var(--trade-yes)); fill: hsl(var(--trade-yes) / 0.12); }\n                .bubble.no { stroke: hsl(var(--trade-no)); fill: hsl(var(--trade-no) / 0.12); }\n                .bubble.up { stroke: hsl(var(--trade-up)); fill: hsl(var(--trade-up) / 0.12); }\n                .bubble.down { stroke: hsl(var(--trade-down)); fill: hsl(var(--trade-down) / 0.12); }\n                .bubble.other { stroke: hsl(var(--trade-other)); fill: hsl(var(--trade-other) / 0.12); }\n                .symbol { font-weight:900; font-size:14px; fill:white; text-anchor:middle; dominant-baseline:middle; pointer-events:none; }\n                .pct { font-size:12px; fill:white; text-anchor:middle; dominant-baseline:middle; pointer-events:none; }\n                .title { font-weight:800; font-size:12px; fill:white; text-anchor:middle; dominant-baseline:middle; pointer-events:none; }\n                .decision { font-size:16px; text-anchor:middle; dominant-baseline:middle; pointer-events:none; font-weight:900; }\n                .amount { fill:#fff; text-anchor:middle; dominant-baseline:middle; pointer-events:none; font-weight:800; }\n            `}</style>
 
-            {showTitle !== false && (
-                <div style={{ position: "absolute", top: 12, left: 16, zIndex: 10, display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div style={{ color: '#fff', fontSize: 18, fontWeight: 800, marginRight: 8 }}>BUBBLE MAP</div>
-                </div>
-            )}
+            {/* Title removed per request */}
             {/* Zoom controls (top-center) */}
             <div style={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 30, display: 'flex', gap: 8 }}>
                 <button
